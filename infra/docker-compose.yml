@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg14
+    container_name: obu_db_backend
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=obu_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - obu_db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # api-service:
+  #   container_name: obu_api_service
+  #   build:
+  #     context: ../services/api-service
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     - db
+  #   restart: unless-stopped
+
+volumes:
+  obu_db_data:
+    name: obu_db_volume
