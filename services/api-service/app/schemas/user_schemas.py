@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 # Properties to be received via API on creation
-class UserCreate(BaseModel):
+class UserCreateSchema(BaseModel):
     username: str
     email: EmailStr
     password: str
@@ -12,7 +12,7 @@ class UserCreate(BaseModel):
     role_id: uuid.UUID
 
 # Properties to return to client
-class UserRead(BaseModel):
+class UserReadSchema(BaseModel):
     id: uuid.UUID
     username: str
     email: EmailStr
@@ -25,7 +25,7 @@ class UserRead(BaseModel):
         from_attributes = True
 
 # Properties to be received via API on update
-class UserUpdate(BaseModel):
+class UserUpdateSchema(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = None

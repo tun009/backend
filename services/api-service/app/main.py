@@ -1,12 +1,16 @@
 from fastapi import FastAPI
-from app.api.endpoints import auth
+from app.api.api_router import api_router
 
-app = FastAPI(title="OBU API Service")
+app = FastAPI(
+    title="OBU Service API",
+    description="Backend API for the OBU Fleet Management System.",
+    version="0.1.0"
+)
 
-app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/", tags=["Root"])
 async def read_root():
     """A simple health check endpoint."""
-    return {"status": "ok", "message": "Welcome to OBU API Service!"}
+    return {"status": "ok", "message": "Welcome to OBU Service API!"}
 
