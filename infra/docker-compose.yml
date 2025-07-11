@@ -28,3 +28,4 @@ services:
 volumes:
   obu_db_data:
     name: obu_db_volume
+
