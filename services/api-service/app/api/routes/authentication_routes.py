@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
+from app.schemas.response_schemas import StandardResponse
 
 from app import schemas
 from app.data_access import user_repo
@@ -10,31 +12,37 @@ from app import models
 
 router = APIRouter()
 
-@router.post("/register", response_model=schemas.user_schemas.UserReadSchema, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model= StandardResponse[schemas.user_schemas.UserReadSchema],
+    status_code=status.HTTP_201_CREATED
+)
 def register_new_user(
-    *,
+    user_in: schemas.user_schemas.UserCreateSchema,
     db: Session = Depends(get_db),
-    user_in: schemas.user_schemas.UserCreateSchema
 ):
     """
-    Create a new user.
+    Create a new user and return a standard response.
     """
-    user = user_repo.get_by_email(db, email=user_in.email)
-    if user:
+    if user_repo.get_by_email(db, email=user_in.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this email already exists in the system.",
-        )
-    user = user_repo.get_by_username(db, username=user_in.username)
-    if user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this username already exists in the system.",
+            detail="The user with this email already exists in the system."
         )
 
-    new_user = user_repo.create(db, obj_in=user_in)
+    if user_repo.get_by_username(db, username=user_in.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The user with this username already exists in the system."
+        )
     
-    return new_user
+    new_user = user_repo.create(db=db, obj_in=user_in)
+    
+    return {
+        "code": status.HTTP_201_CREATED,
+        "message": "success",
+        "data": new_user
+    }
 
 
 @router.post("/login", response_model=schemas.token_schemas.TokenSchema)
@@ -57,7 +65,6 @@ def login_for_access_token(
 
     access_token = security.create_access_token(subject=user.id)  # type: ignore
     
-    # Placeholder for refresh token logic
     return {
         "access_token": access_token,
         "refresh_token": access_token, 

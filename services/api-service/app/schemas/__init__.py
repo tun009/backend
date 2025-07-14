@@ -1,5 +1,7 @@
 # This file makes the 'schemas' directory a Python package.
-# It also makes it easier to import schemas from other modules.
 
+from . import user_schemas
 from . import token_schemas
-from . import user_schemas 
+from . import response_schemas
+from . import role_schemas
+from . import organization_schemas 

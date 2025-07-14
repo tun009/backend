@@ -1,12 +1,11 @@
 import uuid
 import logging
 from sqlalchemy.orm import Session
-# We need to adjust the path to import from the 'app' package
+# The sys.path hack is no longer needed as we'll run this as a module
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.database import SessionLocal
+from app.db.session import SessionLocal
 from app.models import Organization, Role
 
 logging.basicConfig(level=logging.INFO)
@@ -21,8 +20,6 @@ def seed_database():
         "Viewer": "Viewer with read-only permissions."
     }
     
-    created_ids = {}
-
     try:
         # 1. Create Default Organization
         default_org = db.query(Organization).filter(Organization.name == "Default Organization").first()
@@ -32,7 +29,6 @@ def seed_database():
             db.add(default_org)
         else:
             logger.info("Default organization already exists.")
-        created_ids['organization_id'] = default_org.id
 
         # 2. Create Roles
         for role_name, role_desc in roles_to_create.items():
@@ -44,23 +40,27 @@ def seed_database():
             else:
                 logger.info(f"'{role_name}' role already exists.")
             
-            if role_name == "Admin":
-                created_ids['admin_role_id'] = role.id
-
         db.commit()
         
-        # Re-query to get the committed IDs if they were newly created
-        if 'admin_role_id' not in created_ids:
-             admin_role = db.query(Role).filter(Role.name == "Admin").first()
-             created_ids['admin_role_id'] = admin_role.id
+        # Re-query the objects after committing to ensure we have the final state
+        final_org = db.query(Organization).filter(Organization.name == "Default Organization").first()
+        final_admin_role = db.query(Role).filter(Role.name == "Admin").first()
 
         logger.info("Seeding complete.")
         
-        # 3. Print the IDs to use for creating the first user
         print("-" * 50)
         logger.info("Use these IDs for creating the first Admin user in Swagger:")
-        print(f"Default Organization ID: {created_ids.get('organization_id')}")
-        print(f"Admin Role ID:         {created_ids.get('admin_role_id')}")
+        
+        if final_org:
+            print(f"Default Organization ID: {final_org.id}")
+        else:
+            logger.warning("Could not find Default Organization after seeding.")
+            
+        if final_admin_role:
+            print(f"Admin Role ID:         {final_admin_role.id}")
+        else:
+            logger.warning("Could not find Admin Role after seeding.")
+
         print("-" * 50)
 
     except Exception as e:
@@ -70,4 +70,15 @@ def seed_database():
         db.close()
 
 if __name__ == "__main__":
+    # To run this script correctly, execute it as a module from the api-service root:
+    # python -m app.seeds.initial_data
+    
+    # We need to temporarily add the project root to the path
+    # so that the 'app' module can be found when running directly.
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    sys.path.insert(0, project_root)
+    
+    from app.db.session import SessionLocal
+    from app.models import Organization, Role
+
     seed_database()
