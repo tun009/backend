@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -6,18 +7,56 @@ import time
 import logging
 from app.api.api_router import api_router
 from app.core.config import settings
+from app.core.redis_client import redis_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan manager.
+    Handles startup and shutdown events.
+    """
+    # Startup
+    logger.info("🚀 OBU Service starting up...")
+    
+    try:
+        # Initialize Redis
+        if settings.CACHE_ENABLED:
+            await redis_client.initialize()
+            logger.info("✅ Redis initialized successfully")
+        else:
+            logger.info("⚠️ Redis caching is disabled")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Redis: {e}")
+        # Continue without Redis if it fails
+    
+    logger.info("🎉 OBU Service startup complete")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🔄 OBU Service shutting down...")
+    
+    try:
+        if settings.CACHE_ENABLED:
+            await redis_client.close()
+            logger.info("✅ Redis connections closed")
+    except Exception as e:
+        logger.error(f"❌ Error during Redis shutdown: {e}")
+    
+    logger.info("👋 OBU Service shutdown complete")
+
 app = FastAPI(
     title="OBU Service API",
     description="Backend API for the OBU Fleet Management System.",
     version="0.1.0",
-    docs_url="/api/docs",
+    docs_url="/docs",
     redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -64,9 +103,21 @@ async def read_root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     """Detailed health check endpoint."""
+    redis_status = "connected" if settings.CACHE_ENABLED else "disabled"
+    
+    # Test Redis connection if enabled
+    if settings.CACHE_ENABLED:
+        try:
+            await redis_client.get_client().ping()
+            redis_status = "connected"
+        except:
+            redis_status = "disconnected"
+    
     return {
         "status": "healthy",
         "timestamp": time.time(),
         "service": "OBU Service API",
-        "version": "0.1.0"
+        "version": "0.1.0",
+        "redis": redis_status,
+        "cache_enabled": settings.CACHE_ENABLED
     }

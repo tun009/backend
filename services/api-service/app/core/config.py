@@ -23,8 +23,22 @@ class Settings:
     # --- JWT Settings ---
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "default_secret_key")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
-    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+    # --- Redis Settings ---
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_URL: str = os.getenv("REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+
+    # --- Cache Settings ---
+    CACHE_ENABLED: bool = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+    VEHICLE_LOCATION_TTL: int = int(os.getenv("VEHICLE_LOCATION_TTL", "300"))  # 5 minutes
+    DASHBOARD_METRICS_TTL: int = int(os.getenv("DASHBOARD_METRICS_TTL", "600"))  # 10 minutes
+    ALERTS_TTL: int = int(os.getenv("ALERTS_TTL", "60"))  # 1 minute
+    DEFAULT_CACHE_TTL: int = int(os.getenv("DEFAULT_CACHE_TTL", "3600"))  # 1 hour
 
 settings = Settings()
 

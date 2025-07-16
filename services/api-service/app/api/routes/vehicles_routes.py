@@ -8,11 +8,12 @@ from app import models, schemas
 from app.api import dependencies
 from app.db.session import get_db
 from app.data_access import vehicle_repo
+from app.core.cache_decorator import cache, invalidate_vehicle_cache
 
 router = APIRouter()
 
 @router.post("/", response_model=schemas.vehicle_schemas.VehicleReadSchema, status_code=status.HTTP_201_CREATED)
-def create_vehicle(
+async def create_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_in: schemas.vehicle_schemas.VehicleCreateSchema,
@@ -37,7 +38,8 @@ def create_vehicle(
         )
 
 @router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema)
-def get_vehicle_by_id(
+@cache(key_prefix="vehicle", ttl=600, resource_id_param="vehicle_id")  # Cache for 10 minutes
+async def get_vehicle_by_id(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
@@ -52,7 +54,7 @@ def get_vehicle_by_id(
     return vehicle
 
 @router.get("/", response_model=List[schemas.vehicle_schemas.VehicleReadSchema])
-def get_vehicles(
+async def get_vehicles(
     *,
     db: Session = Depends(get_db),
     skip: int = 0,
@@ -66,11 +68,11 @@ def get_vehicles(
     return vehicles
 
 @router.put("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema)
-def update_vehicle(
+async def update_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
-    vehicle_in: schemas.vehicle_schemas.VehicleUpdateSchema,
+    vehicle_update: schemas.vehicle_schemas.VehicleUpdateSchema,
     current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
@@ -80,11 +82,21 @@ def update_vehicle(
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     
-    vehicle = vehicle_repo.update(db, db_obj=vehicle, obj_in=vehicle_in)
-    return vehicle
+    try:
+        updated_vehicle = vehicle_repo.update(db, db_obj=vehicle, obj_in=vehicle_update)
+        
+        # Invalidate cache after update
+        await invalidate_vehicle_cache(str(vehicle_id))
+        
+        return updated_vehicle
+    except IntegrityError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid data or constraint violation."
+        )
 
-@router.delete("/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_vehicle(
+@router.delete("/{vehicle_id}")
+async def delete_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
@@ -98,4 +110,38 @@ def delete_vehicle(
         raise HTTPException(status_code=404, detail="Vehicle not found")
     
     vehicle_repo.remove(db, id=vehicle_id)
-    return 
+    
+    # Invalidate cache after deletion
+    await invalidate_vehicle_cache(str(vehicle_id))
+    
+    return {"message": "Vehicle deleted successfully"}
+
+# New endpoint for getting vehicle location (example of specialized caching)
+@router.get("/{vehicle_id}/location")
+@cache(key_prefix="vehicle_location", ttl=300, resource_id_param="vehicle_id")  # Cache for 5 minutes
+async def get_vehicle_location(
+    *,
+    db: Session = Depends(get_db),
+    vehicle_id: uuid.UUID,
+    current_user: models.User = Depends(dependencies.get_current_active_user)
+):
+    """
+    Get latest location of a vehicle.
+    This is an example of how to cache GPS/location data.
+    """
+    # This would typically query the locations TimescaleDB table
+    # For now, return mock data
+    vehicle = vehicle_repo.get(db, id=vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    
+    # Mock location data - replace with actual TimescaleDB query
+    return {
+        "vehicle_id": vehicle_id,
+        "latitude": 21.0285,  # Mock Hanoi coordinates
+        "longitude": 105.8542,
+        "speed_kph": 45,
+        "heading": 180,
+        "timestamp": "2024-01-15T10:30:00Z",
+        "engine_status": True
+    } 
