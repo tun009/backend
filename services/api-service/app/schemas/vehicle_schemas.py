@@ -1,32 +1,32 @@
 import uuid
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
-# --- Vehicle Schemas ---
+# --- Vehicle Schemas - FastCRUD Pattern ---
 
-class VehicleBaseSchema(BaseModel):
-    """Schema chung chứa các trường cơ bản của Vehicle."""
-    plate_number: str = Field(..., max_length=20, description="Biển số xe")
-    type: Optional[str] = Field(None, max_length=50, description="Loại xe")
-    load_capacity_kg: Optional[int] = Field(None, description="Tải trọng (kg)")
-    registration_expiry: Optional[date] = Field(None, description="Hạn đăng kiểm")
+class VehicleCreate(BaseModel):
+    """Schema for creating new Vehicle."""
+    plate_number: str = Field(..., max_length=20)
+    type: Optional[str] = Field(None, max_length=50)
+    load_capacity_kg: Optional[int] = Field(None)
+    registration_expiry: Optional[date] = Field(None)
 
-class VehicleCreateSchema(VehicleBaseSchema):
-    """Schema cho việc tạo mới Vehicle."""
-    pass
-
-class VehicleUpdateSchema(VehicleBaseSchema):
-    """Schema cho việc cập nhật Vehicle. Tất cả các trường đều là tùy chọn."""
-    # Kế thừa từ Base nhưng ghi đè lại để cho phép optional
+class VehicleUpdate(BaseModel):
+    """Schema for updating Vehicle."""
     plate_number: Optional[str] = Field(None, max_length=20)
     type: Optional[str] = Field(None, max_length=50)
     load_capacity_kg: Optional[int] = Field(None)
     registration_expiry: Optional[date] = Field(None)
 
-class VehicleReadSchema(VehicleBaseSchema):
-    """Schema cho việc đọc dữ liệu Vehicle, sẽ được trả về cho client."""
+class VehicleRead(BaseModel):
+    """Schema for reading Vehicle data."""
     id: uuid.UUID
+    plate_number: str
+    type: Optional[str]
+    load_capacity_kg: Optional[int]
+    registration_expiry: Optional[date]
+    created_at: datetime
     
     class Config:
         from_attributes = True 

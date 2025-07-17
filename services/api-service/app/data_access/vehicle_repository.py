@@ -1,12 +1,8 @@
-from sqlalchemy.orm import Session
+from fastcrud import FastCRUD
 
 from app.models import Vehicle
-from app.schemas.vehicle_schemas import VehicleCreateSchema, VehicleUpdateSchema
-from .base_repository import BaseRepository
+from app.schemas.vehicle_schemas import VehicleCreate, VehicleUpdate, VehicleRead
 
-class VehicleRepository(BaseRepository[Vehicle, VehicleCreateSchema, VehicleUpdateSchema]):
-    # You can add vehicle-specific methods here if needed
-    def get_by_plate_number(self, db: Session, *, plate_number: str) -> Vehicle | None:
-        return db.query(Vehicle).filter(Vehicle.plate_number == plate_number).first()
-
-vehicle_repo = VehicleRepository(Vehicle) 
+# FastCRUD pattern - all CRUD operations built-in!
+CRUDVehicle = FastCRUD[Vehicle, VehicleCreate, VehicleUpdate, VehicleUpdate, VehicleUpdate, VehicleRead]
+crud_vehicles = CRUDVehicle(Vehicle) 

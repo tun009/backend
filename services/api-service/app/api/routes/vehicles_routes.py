@@ -1,141 +1,102 @@
 import uuid
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from typing import Annotated, Optional
 
-from app import models, schemas
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import schemas
 from app.api import dependencies
-from app.db.session import get_db
-from app.data_access import vehicle_repo
-from app.core.cache_decorator import cache, invalidate_vehicle_cache
+from app.db.session import get_async_db
+from app.data_access import crud_vehicles
 
 router = APIRouter()
 
-@router.post("/", response_model=schemas.vehicle_schemas.VehicleReadSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(dependencies.get_current_active_user)])
+@router.post("/", response_model=schemas.vehicle_schemas.VehicleRead, status_code=status.HTTP_201_CREATED)
 async def create_vehicle(
-    *,
-    db: Session = Depends(get_db),
-    vehicle_in: schemas.vehicle_schemas.VehicleCreateSchema,
+    vehicle_in: schemas.vehicle_schemas.VehicleCreate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
 ):
-    """
-    Create a new vehicle.
-    """
-    existing_vehicle = vehicle_repo.get_by_plate_number(db, plate_number=vehicle_in.plate_number)
-    if existing_vehicle:
-        raise HTTPException(
-            status_code=400,
-            detail="A vehicle with this plate number already exists."
-        )
-    try:
-        vehicle = vehicle_repo.create(db, obj_in=vehicle_in)
-        return vehicle
-    except IntegrityError:
-        raise HTTPException(
-            status_code=400,
-            detail="Integrity error occurred."
-        )
+    """Create a new vehicle."""
+    # Check duplicate plate number using FastCRUD's exists method
+    if await crud_vehicles.exists(db=db, plate_number=vehicle_in.plate_number):
+        raise HTTPException(status_code=400, detail="Plate number already exists")
+    
+    return await crud_vehicles.create(db=db, object=vehicle_in)
 
-@router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema,  dependencies=[Depends(dependencies.get_current_active_user)])
-@cache(key_prefix="vehicle", ttl=600, resource_id_param="vehicle_id")  # Cache for 10 minutes
-async def get_vehicle_by_id(
-    *,
-    db: Session = Depends(get_db),
+@router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleRead)
+async def get_vehicle(
     vehicle_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
 ):
-    """
-    Get a specific vehicle by ID.
-    """
-    vehicle = vehicle_repo.get(db, id=vehicle_id)
+    """Get vehicle by ID."""
+    vehicle = await crud_vehicles.get(db=db, id=vehicle_id, schema_to_select=schemas.vehicle_schemas.VehicleRead)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return vehicle
 
-@router.get("/", response_model=List[schemas.vehicle_schemas.VehicleReadSchema],  dependencies=[Depends(dependencies.get_current_active_user)])
+@router.get("/", response_model=PaginatedListResponse[schemas.vehicle_schemas.VehicleRead])
 async def get_vehicles(
-    *,
-    db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 100,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    page: int = 1,
+    items_per_page: int = 10,
+    search: Optional[str] = None
 ):
-    """
-    Retrieve a list of vehicles.
-    """
-    vehicles, total = vehicle_repo.get_multi(db, skip=skip, limit=limit)
-    return vehicles
+    """Get vehicles with pagination and search."""
+    filters = {}
+    if search:
+        # FastCRUD supports icontains filtering for plate number
+        filters["plate_number__icontains"] = search
+    
+    vehicles_data = await crud_vehicles.get_multi(
+        db=db,
+        offset=compute_offset(page, items_per_page),
+        limit=items_per_page,
+        schema_to_select=schemas.vehicle_schemas.VehicleRead,
+        **filters
+    )
+    
+    return paginated_response(crud_data=vehicles_data, page=page, items_per_page=items_per_page)
 
-@router.put("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema,  dependencies=[Depends(dependencies.get_current_active_user)])
+@router.patch("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleRead)
 async def update_vehicle(
-    *,
-    db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
-    vehicle_update: schemas.vehicle_schemas.VehicleUpdateSchema,
+    vehicle_update: schemas.vehicle_schemas.VehicleUpdate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
 ):
-    """
-    Update a vehicle.
-    """
-    vehicle = vehicle_repo.get(db, id=vehicle_id)
-    if not vehicle:
+    """Update vehicle (partial update)."""
+    # Check if vehicle exists
+    if not await crud_vehicles.exists(db=db, id=vehicle_id):
         raise HTTPException(status_code=404, detail="Vehicle not found")
     
-    try:
-        updated_vehicle = vehicle_repo.update(db, db_obj=vehicle, obj_in=vehicle_update)
-        
-        # Invalidate cache after update
-        await invalidate_vehicle_cache(str(vehicle_id))
-        
-        return updated_vehicle
-    except IntegrityError:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid data or constraint violation."
-        )
+    await crud_vehicles.update(db=db, object=vehicle_update, id=vehicle_id)
+    
+    return {"message": "Vehicle updated"}
 
-@router.delete("/{vehicle_id}",  dependencies=[Depends(dependencies.get_current_active_user)])
+@router.delete("/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_vehicle(
-    *,
-    db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
 ):
-    """
-    Delete a vehicle.
-    """
-    vehicle = vehicle_repo.get(db, id=vehicle_id)
-    if not vehicle:
+    """Delete vehicle."""
+    if not await crud_vehicles.exists(db=db, id=vehicle_id):
         raise HTTPException(status_code=404, detail="Vehicle not found")
     
-    vehicle_repo.remove(db, id=vehicle_id)
-    
-    # Invalidate cache after deletion
-    await invalidate_vehicle_cache(str(vehicle_id))
-    
-    return {"message": "Vehicle deleted successfully"}
+    await crud_vehicles.delete(db=db, id=vehicle_id)
 
-# New endpoint for getting vehicle location (example of specialized caching)
-@router.get("/{vehicle_id}/location",dependencies=[Depends(dependencies.get_current_active_user)])
-@cache(key_prefix="vehicle_location", ttl=300, resource_id_param="vehicle_id")  # Cache for 5 minutes
-async def get_vehicle_location(
-    *,
-    db: Session = Depends(get_db),
-    vehicle_id: uuid.UUID,
+@router.get("/plate/{plate_number}", response_model=schemas.vehicle_schemas.VehicleRead)
+async def get_vehicle_by_plate(
+    plate_number: str,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
 ):
-    """
-    Get latest location of a vehicle.
-    This is an example of how to cache GPS/location data.
-    """
-    # This would typically query the locations TimescaleDB table
-    # For now, return mock data
-    vehicle = vehicle_repo.get(db, id=vehicle_id)
+    """Get vehicle by plate number."""
+    vehicle = await crud_vehicles.get(db=db, plate_number=plate_number, schema_to_select=schemas.vehicle_schemas.VehicleRead)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    
-    # Mock location data - replace with actual TimescaleDB query
-    return {
-        "vehicle_id": vehicle_id,
-        "latitude": 21.0285,  # Mock Hanoi coordinates
-        "longitude": 105.8542,
-        "speed_kph": 45,
-        "heading": 180,
-        "timestamp": "2024-01-15T10:30:00Z",
-        "engine_status": True
-    } 
+    return vehicle 
