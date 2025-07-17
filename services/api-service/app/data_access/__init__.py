@@ -3,4 +3,5 @@
 
 from .user_repository import user_repo
 from .vehicle_repository import crud_vehicles
-from .driver_repository import crud_drivers 
+from .driver_repository import crud_drivers
+from .device_repository import crud_devices 
