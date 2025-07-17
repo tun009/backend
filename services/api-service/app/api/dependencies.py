@@ -47,4 +47,31 @@ def get_current_active_user(
     """
     if not current_user.is_active:  # type: ignore  
         raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user 
+    return current_user
+
+def get_current_admin_user(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Dependency that ensures the current user has admin role.
+    """
+    if str(current_user.role) != "admin":
+        raise HTTPException(
+            status_code=403, 
+            detail="Not enough permissions. Admin role required."
+        )
+    return current_user
+
+def require_role(role: str):
+    """
+    Factory function that creates a dependency for requiring a specific role.
+    Usage: Depends(require_role("admin"))
+    """
+    def check_role(current_user: User = Depends(get_current_active_user)) -> User:
+        if str(current_user.role) != role:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Not enough permissions. {role.title()} role required."
+            )
+        return current_user
+    return check_role 

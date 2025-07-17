@@ -12,12 +12,11 @@ from app.core.cache_decorator import cache, invalidate_vehicle_cache
 
 router = APIRouter()
 
-@router.post("/", response_model=schemas.vehicle_schemas.VehicleReadSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=schemas.vehicle_schemas.VehicleReadSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(dependencies.get_current_active_user)])
 async def create_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_in: schemas.vehicle_schemas.VehicleCreateSchema,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Create a new vehicle.
@@ -34,16 +33,15 @@ async def create_vehicle(
     except IntegrityError:
         raise HTTPException(
             status_code=400,
-            detail="Invalid Organization ID or other integrity error."
+            detail="Integrity error occurred."
         )
 
-@router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema)
+@router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema,  dependencies=[Depends(dependencies.get_current_active_user)])
 @cache(key_prefix="vehicle", ttl=600, resource_id_param="vehicle_id")  # Cache for 10 minutes
 async def get_vehicle_by_id(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Get a specific vehicle by ID.
@@ -53,13 +51,12 @@ async def get_vehicle_by_id(
         raise HTTPException(status_code=404, detail="Vehicle not found")
     return vehicle
 
-@router.get("/", response_model=List[schemas.vehicle_schemas.VehicleReadSchema])
+@router.get("/", response_model=List[schemas.vehicle_schemas.VehicleReadSchema],  dependencies=[Depends(dependencies.get_current_active_user)])
 async def get_vehicles(
     *,
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 100,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Retrieve a list of vehicles.
@@ -67,13 +64,12 @@ async def get_vehicles(
     vehicles, total = vehicle_repo.get_multi(db, skip=skip, limit=limit)
     return vehicles
 
-@router.put("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema)
+@router.put("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleReadSchema,  dependencies=[Depends(dependencies.get_current_active_user)])
 async def update_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
     vehicle_update: schemas.vehicle_schemas.VehicleUpdateSchema,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Update a vehicle.
@@ -95,12 +91,11 @@ async def update_vehicle(
             detail="Invalid data or constraint violation."
         )
 
-@router.delete("/{vehicle_id}")
+@router.delete("/{vehicle_id}",  dependencies=[Depends(dependencies.get_current_active_user)])
 async def delete_vehicle(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Delete a vehicle.
@@ -117,13 +112,12 @@ async def delete_vehicle(
     return {"message": "Vehicle deleted successfully"}
 
 # New endpoint for getting vehicle location (example of specialized caching)
-@router.get("/{vehicle_id}/location")
+@router.get("/{vehicle_id}/location",dependencies=[Depends(dependencies.get_current_active_user)])
 @cache(key_prefix="vehicle_location", ttl=300, resource_id_param="vehicle_id")  # Cache for 5 minutes
 async def get_vehicle_location(
     *,
     db: Session = Depends(get_db),
     vehicle_id: uuid.UUID,
-    current_user: models.User = Depends(dependencies.get_current_active_user)
 ):
     """
     Get latest location of a vehicle.

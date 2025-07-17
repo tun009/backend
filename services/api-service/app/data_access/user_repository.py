@@ -30,8 +30,7 @@ class UserRepository:
             email=obj_in.email,
             full_name=obj_in.full_name,
             hashed_password=hashed_password,
-            organization_id=obj_in.organization_id,
-            role_id=obj_in.role_id
+            role=obj_in.role
         )
         
         db.add(db_obj)

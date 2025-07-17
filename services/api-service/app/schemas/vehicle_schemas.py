@@ -14,7 +14,7 @@ class VehicleBaseSchema(BaseModel):
 
 class VehicleCreateSchema(VehicleBaseSchema):
     """Schema cho việc tạo mới Vehicle."""
-    organization_id: uuid.UUID
+    pass
 
 class VehicleUpdateSchema(VehicleBaseSchema):
     """Schema cho việc cập nhật Vehicle. Tất cả các trường đều là tùy chọn."""
@@ -23,12 +23,10 @@ class VehicleUpdateSchema(VehicleBaseSchema):
     type: Optional[str] = Field(None, max_length=50)
     load_capacity_kg: Optional[int] = Field(None)
     registration_expiry: Optional[date] = Field(None)
-    organization_id: Optional[uuid.UUID] = None
 
 class VehicleReadSchema(VehicleBaseSchema):
     """Schema cho việc đọc dữ liệu Vehicle, sẽ được trả về cho client."""
     id: uuid.UUID
-    organization_id: uuid.UUID
     
     class Config:
         from_attributes = True 

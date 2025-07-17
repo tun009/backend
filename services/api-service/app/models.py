@@ -20,26 +20,10 @@ import enum
 
 Base = declarative_base()
 
-# The user_roles association table is removed.
-
-class Organization(Base):
-    __tablename__ = "organizations"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(100), nullable=False)
-    address = Column(Text)
-    tax_code = Column(String(20), unique=True, index=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    users = relationship("User", back_populates="organization")
-    vehicles = relationship("Vehicle", back_populates="organization")
-    drivers = relationship("Driver", back_populates="organization")
-
 class User(Base):
     __tablename__ = "users"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    # Add a foreign key to the roles table
-    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id"))
+    role = Column(String(50), nullable=False, default="admin")
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
@@ -48,30 +32,15 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    organization = relationship("Organization", back_populates="users")
-    # Update relationship to one-to-many
-    role = relationship("Role", back_populates="users")
-
-class Role(Base):
-    __tablename__ = 'roles'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String(50), unique=True, nullable=False)
-    description = Column(String(255))
-    
-    # Update relationship to one-to-many
-    users = relationship("User", back_populates="role")
-
 class Vehicle(Base):
     __tablename__ = "vehicles"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     plate_number = Column(String(20), unique=True, nullable=False, index=True)
     type = Column(String(50))
     load_capacity_kg = Column(Integer)
     registration_expiry = Column(Date)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    organization = relationship("Organization", back_populates="vehicles")
     device = relationship("Device", back_populates="vehicle", uselist=False, cascade="all, delete-orphan")
     journey_sessions = relationship("JourneySession", back_populates="vehicle")
     images = relationship("Image", back_populates="vehicle")
@@ -91,14 +60,12 @@ class Device(Base):
 class Driver(Base):
     __tablename__ = "drivers"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     full_name = Column(String(100), nullable=False)
     license_number = Column(String(50), unique=True, nullable=False, index=True)
     card_id = Column(String(50), unique=True, index=True)
     phone_number = Column(String(20))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    organization = relationship("Organization", back_populates="drivers")
     journey_sessions = relationship("JourneySession", back_populates="driver")
 
 class JourneySession(Base):

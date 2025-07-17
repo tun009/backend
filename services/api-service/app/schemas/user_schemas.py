@@ -2,9 +2,6 @@ from pydantic import BaseModel, EmailStr
 import uuid
 from typing import Optional
 
-from .role_schemas import RoleReadSchema
-from .organization_schemas import OrganizationReadSchema
-
 # --- User Schemas ---
 
 class UserCreateSchema(BaseModel):
@@ -12,8 +9,7 @@ class UserCreateSchema(BaseModel):
     email: EmailStr
     password: str
     full_name: Optional[str] = None
-    organization_id: uuid.UUID
-    role_id: uuid.UUID
+    role: str = "admin"
 
 class UserReadSchema(BaseModel):
     id: uuid.UUID
@@ -21,9 +17,7 @@ class UserReadSchema(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool
-    
-    organization: OrganizationReadSchema
-    role: RoleReadSchema
+    role: str
 
     class Config:
         from_attributes = True
@@ -33,4 +27,5 @@ class UserUpdateSchema(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     password: Optional[str] = None
-    is_active: Optional[bool] = None 
+    is_active: Optional[bool] = None
+    role: Optional[str] = None 

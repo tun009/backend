@@ -6,7 +6,8 @@ import sys
 import os
 
 from app.db.session import SessionLocal
-from app.models import Organization, Role
+from app.models import User
+from app.core.security import get_password_hash
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,53 +15,34 @@ logger = logging.getLogger(__name__)
 def seed_database():
     db: Session = SessionLocal()
     
-    roles_to_create = {
-        "Admin": "Administrator with all permissions.",
-        "Manager": "Manager with operational permissions.",
-        "Viewer": "Viewer with read-only permissions."
-    }
-    
     try:
-        # 1. Create Default Organization
-        default_org = db.query(Organization).filter(Organization.name == "Default Organization").first()
-        if not default_org:
-            logger.info("Creating default organization...")
-            default_org = Organization(id=uuid.uuid4(), name="Default Organization", tax_code="0000000000")
-            db.add(default_org)
+        # Create default admin user
+        admin_user = db.query(User).filter(User.username == "admin").first()
+        if not admin_user:
+            logger.info("Creating default admin user...")
+            admin_user = User(
+                id=uuid.uuid4(),
+                username="admin",
+                email="admin@example.com",
+                full_name="System Administrator",
+                role="admin",
+                hashed_password=get_password_hash("admin123"),
+                is_active=True
+            )
+            db.add(admin_user)
         else:
-            logger.info("Default organization already exists.")
-
-        # 2. Create Roles
-        for role_name, role_desc in roles_to_create.items():
-            role = db.query(Role).filter(Role.name == role_name).first()
-            if not role:
-                logger.info(f"Creating '{role_name}' role...")
-                role = Role(id=uuid.uuid4(), name=role_name, description=role_desc)
-                db.add(role)
-            else:
-                logger.info(f"'{role_name}' role already exists.")
+            logger.info("Default admin user already exists.")
             
         db.commit()
         
-        # Re-query the objects after committing to ensure we have the final state
-        final_org = db.query(Organization).filter(Organization.name == "Default Organization").first()
-        final_admin_role = db.query(Role).filter(Role.name == "Admin").first()
-
         logger.info("Seeding complete.")
         
         print("-" * 50)
-        logger.info("Use these IDs for creating the first Admin user in Swagger:")
-        
-        if final_org:
-            print(f"Default Organization ID: {final_org.id}")
-        else:
-            logger.warning("Could not find Default Organization after seeding.")
-            
-        if final_admin_role:
-            print(f"Admin Role ID:         {final_admin_role.id}")
-        else:
-            logger.warning("Could not find Admin Role after seeding.")
-
+        logger.info("Default admin user credentials:")
+        print(f"Username: admin")
+        print(f"Password: admin123")
+        print(f"Email: admin@example.com")
+        print(f"Role: admin")
         print("-" * 50)
 
     except Exception as e:
@@ -79,6 +61,7 @@ if __name__ == "__main__":
     sys.path.insert(0, project_root)
     
     from app.db.session import SessionLocal
-    from app.models import Organization, Role
+    from app.models import User
+    from app.core.security import get_password_hash
 
     seed_database()
