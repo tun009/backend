@@ -27,6 +27,10 @@ async def create_device(
     if device_in.serial_number and await crud_devices.exists(db=db, serial_number=device_in.serial_number):
         raise HTTPException(status_code=400, detail="Serial number already exists")
     
+    # Convert empty string vehicle_id to None
+    if device_in.vehicle_id == "":
+        device_in.vehicle_id = None
+    
     # If vehicle_id provided, check if vehicle exists and is not already assigned
     if device_in.vehicle_id:
         from app.data_access import crud_vehicles
@@ -87,6 +91,10 @@ async def update_device(
     if not await crud_devices.exists(db=db, id=device_id):
         raise HTTPException(status_code=404, detail="Device not found")
 
+    # Convert empty string vehicle_id to None
+    if device_update.vehicle_id == "":
+        device_update.vehicle_id = None
+
     await crud_devices.update(db=db, object=device_update, id=device_id)
     
     return {"message": "device updated"}
@@ -139,14 +147,19 @@ async def assign_device_to_vehicle(
     if not await crud_devices.exists(db=db, id=device_id):
         raise HTTPException(status_code=404, detail="Device not found")
     
-    # Check if vehicle exists
-    from app.data_access import crud_vehicles
-    if not await crud_vehicles.exists(db=db, id=assignment_data.vehicle_id):
-        raise HTTPException(status_code=400, detail="Vehicle not found")
+    # Convert empty string vehicle_id to None
+    if assignment_data.vehicle_id == "":
+        assignment_data.vehicle_id = None
     
-    # Check if vehicle already has a device (1-1 relationship)
-    if await crud_devices.exists(db=db, vehicle_id=assignment_data.vehicle_id):
-        raise HTTPException(status_code=400, detail="Vehicle already has a device assigned")
+    # Check if vehicle exists (only if vehicle_id is not None)
+    if assignment_data.vehicle_id:
+        from app.data_access import crud_vehicles
+        if not await crud_vehicles.exists(db=db, id=assignment_data.vehicle_id):
+            raise HTTPException(status_code=400, detail="Vehicle not found")
+        
+        # Check if vehicle already has a device (1-1 relationship)
+        if await crud_devices.exists(db=db, vehicle_id=assignment_data.vehicle_id):
+            raise HTTPException(status_code=400, detail="Vehicle already has a device assigned")
     
     # Update device with vehicle_id
     update_data = schemas.device_schemas.DeviceUpdate(vehicle_id=assignment_data.vehicle_id)

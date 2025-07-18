@@ -34,7 +34,7 @@ def get_db():
     try:
         yield db
     finally:
-        db.close()
+        db.close() 
 
 # Async dependency (for FastCRUD)
 async def get_async_db():

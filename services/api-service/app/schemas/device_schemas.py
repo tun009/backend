@@ -7,14 +7,14 @@ from datetime import datetime
 
 class DeviceCreate(BaseModel):
     """Schema for creating new Device."""
-    vehicle_id: Optional[uuid.UUID] = Field(None, description="Vehicle to assign (optional)")
+    vehicle_id: Optional[str] = Field(None, description="Vehicle to assign (optional)")
     imei: str = Field(..., max_length=50)
     serial_number: Optional[str] = Field(None, max_length=50)
     firmware_version: Optional[str] = Field(None, max_length=20)
 
 class DeviceUpdate(BaseModel):
     """Schema for updating Device."""
-    vehicle_id: Optional[uuid.UUID] = None
+    vehicle_id: Optional[str] = None
     imei: Optional[str] = None
     serial_number: Optional[str] = None
     firmware_version: Optional[str] = None
@@ -22,7 +22,7 @@ class DeviceUpdate(BaseModel):
 class DeviceRead(BaseModel):
     """Schema for reading Device data."""
     id: uuid.UUID
-    vehicle_id: Optional[uuid.UUID]
+    vehicle_id: Optional[str]
     imei: str
     serial_number: Optional[str]
     firmware_version: Optional[str]
@@ -33,4 +33,4 @@ class DeviceRead(BaseModel):
 
 class DeviceAssignment(BaseModel):
     """Schema for device assignment."""
-    vehicle_id: uuid.UUID 
+    vehicle_id: Optional[str] 
