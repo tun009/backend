@@ -40,6 +40,14 @@ class Settings:
     ALERTS_TTL: int = int(os.getenv("ALERTS_TTL", "60"))  # 1 minute
     DEFAULT_CACHE_TTL: int = int(os.getenv("DEFAULT_CACHE_TTL", "3600"))  # 1 hour
 
+    # --- MQTT Settings ---
+    MQTT_BROKER_HOST: str = os.getenv("MQTT_BROKER_HOST", "zxs-cs.netbodycamera.com")
+    MQTT_BROKER_PORT: int = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+    MQTT_USERNAME: str = os.getenv("MQTT_USERNAME", "dev1")
+    MQTT_PASSWORD: str = os.getenv("MQTT_PASSWORD", "dev1")
+    MQTT_USER_NO: str = os.getenv("MQTT_USER_NO", "kh4423")
+    MQTT_TIMEOUT: int = int(os.getenv("MQTT_TIMEOUT", "30"))
+
 settings = Settings()
 
 if not settings.DATABASE_URL:

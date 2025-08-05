@@ -10,4 +10,6 @@ python-jose[cryptography]
 python-multipart
 redis>=5.0.1
 aioredis>=2.0.1
+aiomqtt>=2.0.0
+fastcrud>=0.15.0
 
