@@ -4,11 +4,13 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, not_
 
 from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
 from app.data_access import crud_vehicles
+from app.models import Vehicle, Device
 
 router = APIRouter()
 
@@ -24,6 +26,31 @@ async def create_vehicle(
         raise HTTPException(status_code=400, detail="Plate number already exists")
     
     return await crud_vehicles.create(db=db, object=vehicle_in)
+
+@router.get("/unassigned", response_model=list[schemas.vehicle_schemas.VehicleRead])
+async def get_unassigned_vehicles(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Get all vehicles that don't have any device assigned."""
+    # Subquery approach - get vehicles not in assigned list
+    stmt = (
+        select(Vehicle)
+        .where(
+            not_(
+                Vehicle.id.in_(
+                    select(Device.vehicle_id).where(Device.vehicle_id.is_not(None))
+                )
+            )
+        )
+        .order_by(Vehicle.created_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    vehicles = result.scalars().all()
+
+    # Convert to schema and return
+    return [schemas.vehicle_schemas.VehicleRead.model_validate(vehicle) for vehicle in vehicles]
 
 @router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleRead)
 async def get_vehicle(
@@ -71,10 +98,16 @@ async def update_vehicle(
     """Update vehicle (partial update)."""
     if not await crud_vehicles.exists(db=db, id=vehicle_id):
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    
+
     await crud_vehicles.update(db=db, object=vehicle_update, id=vehicle_id)
-    
-    return {"message": "Vehicle updated"}
+
+    # Return updated object
+    updated_vehicle = await crud_vehicles.get(
+        db=db,
+        id=vehicle_id,
+        schema_to_select=schemas.vehicle_schemas.VehicleRead
+    )
+    return updated_vehicle
 
 @router.delete("/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_vehicle(
@@ -88,29 +121,6 @@ async def delete_vehicle(
     
     await crud_vehicles.delete(db=db, id=vehicle_id)
 
-@router.get("/unassigned", response_model=list[schemas.vehicle_schemas.VehicleRead])
-async def get_unassigned_vehicles(
-    db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
-):
-    """Get all vehicles that don't have any device assigned."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import outerjoin
-    from app.models import Vehicle, Device
-    
-    stmt = (
-        select(Vehicle)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
-        .where(Device.vehicle_id.is_(None))
-        .order_by(Vehicle.created_at.desc())
-    )
-    
-    result = await db.execute(stmt)
-    vehicles = result.scalars().all()
-    
-    # Convert to schema and return
-    return [schemas.vehicle_schemas.VehicleRead.model_validate(vehicle) for vehicle in vehicles]
-
 @router.get("/plate/{plate_number}", response_model=schemas.vehicle_schemas.VehicleRead)
 async def get_vehicle_by_plate(
     plate_number: str,
@@ -121,4 +131,4 @@ async def get_vehicle_by_plate(
     vehicle = await crud_vehicles.get(db=db, plate_number=plate_number, schema_to_select=schemas.vehicle_schemas.VehicleRead)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehicle not found")
-    return vehicle 
+    return vehicle

@@ -170,14 +170,13 @@ async def get_journey_sessions(
     total_result = await db.execute(count_stmt)
     total = total_result.scalar()
 
-    # Return paginated response
-    return {
+    # Tạo fake crud_data format để dùng với paginated_response()
+    fake_crud_data = {
         "data": journey_sessions,
-        "total": total or 0,
-        "page": page,
-        "items_per_page": items_per_page,
-        "pages": ((total or 0) + items_per_page - 1) // items_per_page
+        "total_count": total or 0
     }
+
+    return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
 
 @router.get("/active", response_model=list[schemas.journey_session_schemas.JourneySessionWithDetails])
 async def get_active_journey_sessions(
@@ -403,9 +402,13 @@ async def update_journey_session(
     
     # Cập nhật
     await crud_journey_sessions.update(db=db, object=journey_update, id=session_id)
-    
-    # Trả về dữ liệu đã cập nhật
-    updated_journey = await crud_journey_sessions.get(db=db, id=session_id)
+
+    # Return updated object
+    updated_journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
     return updated_journey
 
 @router.delete("/{session_id}")

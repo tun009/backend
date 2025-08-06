@@ -99,7 +99,13 @@ async def update_driver(
 
     await crud_drivers.update(db=db, object=driver_update, id=driver_id)
 
-    return {"message": "driver updated"}
+    # Return updated object
+    updated_driver = await crud_drivers.get(
+        db=db,
+        id=driver_id,
+        schema_to_select=schemas.driver_schemas.DriverRead
+    )
+    return updated_driver
 
 
 @router.delete("/{driver_id}", status_code=status.HTTP_204_NO_CONTENT)

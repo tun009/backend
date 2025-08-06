@@ -5,11 +5,13 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 
 from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
 from app.data_access import crud_devices
+from app.models import Device, Vehicle
 from app.services.mqtt_service import (
     get_mqtt_persistent_service,
     MQTTPersistentService,
@@ -36,9 +38,8 @@ async def create_device(
     if device_in.serial_number and await crud_devices.exists(db=db, serial_number=device_in.serial_number):
         raise HTTPException(status_code=400, detail="Serial number already exists")
     
-    # Convert empty string vehicle_id to None
-    if device_in.vehicle_id == "":
-        device_in.vehicle_id = None
+    # Convert empty string vehicle_id to None (not needed for UUID, but keep for compatibility)
+    # UUID fields are already properly typed
     
     # If vehicle_id provided, check if vehicle exists and is not already assigned
     if device_in.vehicle_id:
@@ -74,72 +75,76 @@ async def get_devices(
     search: Optional[str] = None,
     include_realtime: bool = True
 ):
-    """Get devices with pagination, search and optional realtime data."""
-    filters = {}
-    if search:
-        # FastCRUD supports icontains filtering for IMEI or serial number
-        filters["imei__icontains"] = search
+    """Get devices with pagination, search and vehicle plate numbers."""
 
-    devices_data = await crud_devices.get_multi(
-        db=db,
-        offset=compute_offset(page, items_per_page),
-        limit=items_per_page,
-        schema_to_select=schemas.device_schemas.DeviceRead,
-        **filters
+    # Build query với joins để lấy vehicle plate number
+    stmt = (
+        select(
+            Device,
+            Vehicle.plate_number
+        )
+        .outerjoin(Vehicle, Device.vehicle_id == Vehicle.id)
+        .order_by(Device.installed_at.desc())
     )
 
-    # Nếu không cần realtime data, trả về như cũ
-    if not include_realtime or not devices_data["data"]:
-        # Convert to DeviceReadWithRealtime format (realtime = {})
-        devices_with_realtime = []
-        for device in devices_data["data"]:
-            device_dict = device if isinstance(device, dict) else device.__dict__
-            device_with_realtime = schemas.device_schemas.DeviceReadWithRealtime(
-                **device_dict,
-                realtime={}
-            )
-            devices_with_realtime.append(device_with_realtime)
+    # Apply search filter if provided
+    if search:
+        stmt = stmt.where(Device.imei.icontains(search))
 
-        devices_data["data"] = devices_with_realtime
-        return paginated_response(crud_data=devices_data, page=page, items_per_page=items_per_page)
+    # Apply pagination
+    offset = compute_offset(page, items_per_page)
+    stmt = stmt.offset(offset).limit(items_per_page)
 
-    # Lấy danh sách IMEI từ devices
-    device_imeis = []
-    for device in devices_data["data"]:
-        imei = device.get("imei") if isinstance(device, dict) else getattr(device, "imei", None)
-        if imei:
-            device_imeis.append(imei)
+    result = await db.execute(stmt)
+    rows = result.all()
 
-    # Fetch realtime data cho tất cả devices đồng thời
-    realtime_data = {}
-    if device_imeis:
+    # Transform to response schema
+    devices_with_details = []
+    for row in rows:
+        device, plate_number = row
+        device_data = schemas.device_schemas.DeviceReadWithRealtime(
+            id=device.id,
+            vehicle_id=device.vehicle_id,
+            imei=device.imei,
+            serial_number=device.serial_number,
+            firmware_version=device.firmware_version,
+            installed_at=device.installed_at,
+            vehicle_plate_number=plate_number,
+            realtime={}
+        )
+        devices_with_details.append(device_data)
+
+    # Get total count for pagination
+    count_stmt = select(func.count(Device.id))
+    if search:
+        count_stmt = count_stmt.where(Device.imei.icontains(search))
+
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar()
+
+    # Handle realtime data if needed
+    if include_realtime and devices_with_details:
+        device_imeis = [device.imei for device in devices_with_details]
+
         try:
             realtime_data = await mqtt_service.get_multiple_devices_realtime_info(device_imeis, max_concurrent=3)
         except Exception as e:
             logger.warning(f"Failed to fetch realtime data: {e}")
+            realtime_data = {}
 
-    # Combine device data với realtime data
-    devices_with_realtime = []
-    for device in devices_data["data"]:
-        device_dict = device if isinstance(device, dict) else device.__dict__
-        imei = device_dict.get("imei")
+        # Add realtime data to devices
+        for device in devices_with_details:
+            realtime_response = realtime_data.get(device.imei)
+            if realtime_response and hasattr(realtime_response, 'data'):
+                device.realtime = realtime_response.data.model_dump()
 
-        # Lấy chỉ data object từ realtime response, bỏ metadata
-        realtime_response = realtime_data.get(imei) if imei else None
-        realtime_data_only = {}
+    # Return paginated response
+    fake_crud_data = {
+        "data": devices_with_details,
+        "total_count": total or 0
+    }
 
-        if realtime_response and hasattr(realtime_response, 'data'):
-            # Convert DeviceRealtimeDataSchema to dict
-            realtime_data_only = realtime_response.data.model_dump()
-
-        device_with_realtime = schemas.device_schemas.DeviceReadWithRealtime(
-            **device_dict,
-            realtime=realtime_data_only
-        )
-        devices_with_realtime.append(device_with_realtime)
-
-    devices_data["data"] = devices_with_realtime
-    return paginated_response(crud_data=devices_data, page=page, items_per_page=items_per_page)
+    return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
 
 @router.patch("/{device_id}", response_model=schemas.device_schemas.DeviceRead)
 async def update_device(
@@ -153,13 +158,17 @@ async def update_device(
     if not await crud_devices.exists(db=db, id=device_id):
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Convert empty string vehicle_id to None
-    if device_update.vehicle_id == "":
-        device_update.vehicle_id = None
+    # UUID fields are properly typed, no need for string conversion
 
     await crud_devices.update(db=db, object=device_update, id=device_id)
-    
-    return {"message": "device updated"}
+
+    # Return updated object
+    updated_device = await crud_devices.get(
+        db=db,
+        id=device_id,
+        schema_to_select=schemas.device_schemas.DeviceRead
+    )
+    return updated_device
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_device(
