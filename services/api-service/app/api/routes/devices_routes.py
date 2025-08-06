@@ -11,8 +11,8 @@ from app.api import dependencies
 from app.db.session import get_async_db
 from app.data_access import crud_devices
 from app.services.mqtt_service import (
-    get_mqtt_realtime_service,
-    MQTTRealtimeService,
+    get_mqtt_persistent_service,
+    MQTTPersistentService,
     DeviceTimeoutError,
     MQTTConnectionError,
     InvalidResponseError
@@ -68,7 +68,7 @@ async def get_device(
 async def get_devices(
     db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
-    mqtt_service: Annotated[MQTTRealtimeService, Depends(get_mqtt_realtime_service)],
+    mqtt_service: Annotated[MQTTPersistentService, Depends(get_mqtt_persistent_service)],
     page: int = 1,
     items_per_page: int = 10,
     search: Optional[str] = None,
@@ -130,7 +130,7 @@ async def get_devices(
 
         if realtime_response and hasattr(realtime_response, 'data'):
             # Convert DeviceRealtimeDataSchema to dict
-            realtime_data_only = realtime_response.data.dict()
+            realtime_data_only = realtime_response.data.model_dump()
 
         device_with_realtime = schemas.device_schemas.DeviceReadWithRealtime(
             **device_dict,
@@ -252,9 +252,8 @@ async def get_device_realtime_info(
     device_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_async_db)],
     current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
-    mqtt_service: Annotated[MQTTRealtimeService, Depends(get_mqtt_realtime_service)]
+    mqtt_service: Annotated[MQTTPersistentService, Depends(get_mqtt_persistent_service)]
 ):
-    """Lấy thông tin real-time của thiết bị qua MQTT (chỉ trả về data object)."""
 
     # 1. Kiểm tra device có tồn tại trong database không
     device = await crud_devices.get(db=db, id=device_id)
@@ -277,7 +276,7 @@ async def get_device_realtime_info(
             )
 
         # Chỉ trả về data object, bỏ metadata
-        return realtime_response.data.dict()
+        return realtime_response.data.model_dump()
 
     except DeviceTimeoutError as e:
         raise HTTPException(

@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -6,10 +7,43 @@ import time
 import logging
 from app.api.api_router import api_router
 from app.core.config import settings
+from app.services.mqtt_service import MQTTPersistentService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan events"""
+    # Startup
+    logger.info("🚀 Starting OBU Service API...")
+
+    try:
+        # Initialize MQTT persistent connection
+        await MQTTPersistentService.initialize()
+        logger.info("✅ MQTT persistent connection initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize MQTT: {e}")
+        # Continue without MQTT - graceful degradation
+
+    logger.info("🎉 OBU Service API started successfully")
+
+    yield
+
+    # Shutdown
+    logger.info("🛑 Shutting down OBU Service API...")
+
+    try:
+        # Close MQTT persistent connection
+        await MQTTPersistentService.close()
+        logger.info("✅ MQTT persistent connection closed")
+    except Exception as e:
+        logger.error(f"❌ Error closing MQTT: {e}")
+
+    logger.info("👋 OBU Service API shutdown complete")
+
 
 app = FastAPI(
     title="OBU Service API",
@@ -17,7 +51,8 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
