@@ -73,13 +73,16 @@ class JourneySession(Base):
     id = Column(BigInteger, primary_key=True)
     vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False)
     driver_id = Column(UUID(as_uuid=True), ForeignKey("drivers.id"), nullable=False)
-    start_time = Column(DateTime(timezone=True), server_default=func.now())
-    end_time = Column(DateTime(timezone=True), nullable=True)
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
     total_distance_km = Column(Numeric(10, 2), default=0.0)
     notes = Column(Text)
-    
+    status = Column(String(20), server_default='pending', nullable=True)
+    activated_at = Column(DateTime(timezone=True), nullable=True)
+
     vehicle = relationship("Vehicle", back_populates="journey_sessions")
     driver = relationship("Driver", back_populates="journey_sessions")
+    device_logs = relationship("DeviceLog", back_populates="journey_session")
 
 class ImageTypeEnum(str, enum.Enum):
     image = "image"
@@ -104,6 +107,16 @@ class Alert(Base):
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     details = Column(JSONB)
     is_acknowledged = Column(Boolean, default=False, nullable=False)
-    
+
     vehicle = relationship("Vehicle", back_populates="alerts")
+
+class DeviceLog(Base):
+    __tablename__ = "device_logs"
+    id = Column(BigInteger, primary_key=True)
+    journey_session_id = Column(BigInteger, ForeignKey("journey_sessions.id"), nullable=False)
+    device_imei = Column(String(50), nullable=False)
+    mqtt_response = Column(JSONB, nullable=False)
+    collected_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    journey_session = relationship("JourneySession", back_populates="device_logs")
 

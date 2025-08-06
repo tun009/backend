@@ -1,0 +1,772 @@
+Authentication
+
+1. Device connect to the matt server by username and password.
+
+° username: device-${device id}
+
+° password: device-${device id}-password — md5(or other encryption algorithms) > xxxxxxxxXxXXXXXXXXXXXXXXXXXX XXXXX
+
+example: device id: 22010000123 username: device-22019000123 password: device-22019000123-password — md35(or other
+encryption algorithms) > 21DBEF6F223645CC21DD290F 30AFDO06
+
+2. The client ID used to connect to the MQTT server can be defined as follows. making it easier for the MQTT server to handle
+
+device online and offline events
+
+° server: server,${serverNo}, manage, {randomString}
+° device: device, ${deviceNo}, manage, {randomString}
+
+°user: user, ${username},${sessionId},manage, {randomString}
+
+example: device, 22010000123 , manage, P11HnU140@Ac4iX6C
+
+Outline
+
+${typeCode}/${typeNo}/${sessionId}/${signallingType}/${signalling}
+${typeCode}/${typeNo}/${signallingType}/${signalling}
+
+1. typeCode: user, device, server
+
+- typeNo: uesri1, 22019000123, server1
+
+. sessionld: the unique ID(uuid nanoid) of the client, which can be randomly generated
+. signallingType: manage, webrtc
+
+- signalling: get-user-setup, get-configs, update-configs,ping,start...
+
+version: v@.0.1
+
+- timestamp: UTC + @0:0@ 1720089580
+
+. dataEncryptionMode: The encryption mode of data fields
+
+Oo ON DMO KW DY
+
+. data: Message content
+
+=
+oO
+
+. client: web app ...
+
+=
+a
+
+. device: bodycamera
+
+Signalling client subscribe topic device subscribe topic
+
+${typeCode}/${typeNo}/${sessionId}/manage/get-
+get user setup device/${typeNo}/manage/get-user-setup
+user-setup-result
+
+update user ${typeCode}/${typeNo}/${sessionId}/manage/update-
+device/${typeNo}/manage/update-user-setup
+setup user-setup-result
+
+. ${typeCode}/${typeNo}/${sessionId}/manage/get-
+get configs device/${typeNo}/manage/get-configs
+configs-result
+
+. ${typeCode}/${typeNo}/${sessionId}/manage/update-
+update configs device/${typeNo}/manage/update-configs
+configs-result
+
+. ${typeCode}/${typeNo}/${sessionId}/manage/user -
+user bind device/¢{typeNo}/manage/user-binding
+binding-result
+
+. ${typeCode}/${typeNo}/${sessionId}/manage/user -
+user unbind device/${typeNo}/manage/user-unbind
+unbind-result
+
+${typeCode}/${typeNo}/${sessionId}/manage/bc-plus-
+bc plus ' device/${typeNo}/manage/bc-plus
+result
+
+ae oe ee Co .
+PLLYPCLOGE F/ DH) CLYPENO F/ H_SEsslONs1a f/Mahage/ Fec—
+
+log device/${typeNo}/manage/get-logs
+
+logs-results
+
+. . device/${typeNo}/manage/device/get-
+firmware info
+
+firmware-info-result
+
+. . device/${typeNo}/manage/device/get-iot-
+iot config
+
+config-result
+Notice:
+
+* client send message to topic device/${typeNo}/{signallingType}/${signalling}
+* device send message to topic ${typeCode}/${typeNo}/${sessionId}/${signallingType}/${signalling}
+* Wildcard + can be used to subscribe to all device's log topic: device/+/status/logs
+
+* Wildcard # can be used to subscribe all manage topic: server/001/aVdjQ7Q5HRM-bFgSGjxvv/manage/#
+device/22010000123/manage/#
+
+Detail
+
+get users setup
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/get-user-setup-result
+example: server/@@1/aVdjQ7Q5HRM-bFgSGjxvv/manage/get-user-setup-result
+
+receive messages from the device:
+
+{
+“typeCode": "device",
+"typeNo": "22019900123",
+"version": "1.0.0",
+
+"timestamp": 1715929735,
+
+"“dataEncryptionMode": "PLAIN",
+
+"data": {
+
+"UserSum": 2,
+"UserList": [
+{
+
+"UserType": @,
+"Permission": @,
+"FilesLock": @,
+"SetupLock": @,
+"DelAfterUpload": @,
+"Overwrite": 1,
+"“UploadFileEn": 1,
+“FilesHaveUpload": @,
+"“FilesNoUpload": @,
+"UsedStorageKB": @,
+"ButtLockAudio": @
+"ButtLockVideo": @
+"ButtLockIR": 0,
+"ButtLockPower": ®@,
+"ButtLockSnap": @,
+"ButtLockSOS": @,
+"ButtLockSpecial": @,
+"ButtLockMenu": @,
+"ButtLockDown": @,
+"ButtLockUp": @,
+"ButtLockEsc": @,
+"UserID": "e9000001",
+"UserName": “admin”,
+"Password": "F7BAEF4A0@D253885351E8C4471@D2D8",
+“DepartmentID": "@0@01",
+"Department": "“admingroup"”,
+
+5
+
+2
+"“LastAccess": "27/06/24-14:17:00",
+"LastUpload": "",
+
+"UpdateTime":
+
+"UserType": 1,
+"Permission": @,
+"FilesLock": @,
+"SetupLock": 1,
+"DelAfterUpload": @,
+"Overwrite": @,
+"UploadFileEn": 1,
+"“FilesHaveUpload": @,
+“FilesNoUpload":
+"“UsedStorageKB":
+"ButtLockAudio":
+"ButtLockVideo":
+"ButtLockIR": @,
+"ButtLockPower": @,
+
+"ButtLockSnap": @,
+
+"ButtLockSOS": @,
+
+"ButtLockSpecial": 0,
+
+"ButtLockMenu": @,
+
+"ButtLockDown": @,
+
+"ButtLockUp": @,
+
+"ButtLockEsc": @,
+
+"UserID"; "12313",
+
+"UserName": “usel",
+
+"Password": "F7BAEF4A00D253885351E8C44718D2D8" ,
+"DepartmentID": "“asdas",
+
+"Department": "12312",
+
+"LastAccess": "",
+
+"“LastUpload": "",
+
+5
+2
+
+2
+
+2)
+e
+e
+e
+
+’
+
+"“UpdateTime":
+
+device subscribe
+device/${typeNo}/manage/get-user-setup
+example: device/22010000123/manage/get-user-setup
+
+receive messages from the client:
+
+"sessionId": "“aVdjQ7Q5HRM-bFgqSGjxvv",
+"typeCode": "server",
+
+"“typeNo": "@01",
+
+"version": "1.0.0",
+
+"timestamp": 1715929735
+
+update user setup
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/update-user-setup-result
+example: server/@01/aVdjQ7Q5HRM-bFgSGjxvv/manage/update-user-setup-result
+
+receive messages from the device:
+“typeCode": "device",
+"typeNo": "22010000123",
+"version": "1.0.0",
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": "success" //fail
+
+device subscribe
+device/¢{typeNo}/manage/update-user- setup
+example: device/22010000123/manage/update-user-setup
+
+receive messages from the client:
+
+"sessionId": “aVdjQ7Q5HRM-bFqSGjxvv",
+“typeCode": "server",
+"typeNo": "e@e1",
+"version": "1.0.0",
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": {
+"opt": @, //@:Modify configs 1:Add user 2:Delete user
+
+“opt_user_name": "“user1", //The user name that needs to be updated for option
+“opt_user_id": "ee@ee0e00e1", //The user id that needs to be updated for option
+
+"UserType": @,
+
+"UserID": "@ee00001",
+"UserName": "“useri",
+"DepartmentID": "@0001",
+"Department": "“admingroup",
+"Permission": @,
+"FilesLock": 0,
+"Password": "F7BAEF4A0@D253885351E8C4471@D2D8",
+"SetupLock": @,
+“DelAfterUpload": @,
+"Overwrite": 1,
+"UploadFileEn": 0,
+"ButtLockAudio": 1,
+"ButtLockVideo": @,
+"ButtLockIR": 1,
+"ButtLockPower": @,
+"“ButtLockSnap": 1,
+"ButtLockSOS": @,
+"“ButtLockSpecial": 1,
+"ButtLockMenu": @,
+"ButtLockDown": 1,
+"ButtLockUp": @,
+"ButtLockEsc": 1
+
+get configs
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/get-configs-result
+example: server/@0@1/aVdjQ7Q5HRM-bFqSGjxvv/manage/get-configs-result
+
+receive messages from the device:
+
+"typeCode": "device",
+"LV noeNo"- "3960108000122".
+"version": "1.0.0",
+“dataEncryptionMode": "PLAIN",
+"timestamp": 1715929735,
+"data": {
+"DEVICE_INFO": {
+"sn": "23036000094",
+“device_name": "Intelbras",
+“app_name": "Name=MYDEV, APP=uiapp, APP=usbmode, APP=sysnet, APP=gpsserver,APP=protocols,APP=sysctrl,",
+“manufacture”: "BCM",
+“hardware”: "1035",
+“hardware_version": "V13.0",
+“product_id": "6ee@ee94",
+“id_type": 49,
+“vendor_id": "@1",
+"“device_id": "0200e0",
+"extend_id": "2303",
+“software_version": "V2.006.01IBe@00.e",
+“mcu_version": "@@@00",
+“build _time": "22/12/23 22:39:33",
+“cpu_type": 33,
+“pcb_version": "V1.9",
+“mqtt_version": "V@.@.1-0628",
+“activate_time": "1704766412",
+“with_mobile": @,
+“with_wifi": @
+hs
+"SYSTEM_INFO": {
+"cpu_speed": 800,
+“cpu_usage": 5,
+“memory_capacity": 68,
+“memory_usage": 967,
+“device_uptime": 436195,
+“system_uptime": 436195,
+“sleep status": 0,
+"temperature": 42,
+“id_type": @,
+"time": "2024/07/@2-15:53:16",
+“route_type": 9,
+“route_name": “ethe",
+“net_connect_status": 1,
+"gateway": "192.168.1.1",
+“dnsO@": "192.168.1.1",
+“dnsi": "",
+“auto_restart": @,
+“language”: 1,
+“time_sync": 4,
+“timezone_mode": 1,
+"timezone": "Etc/GMT-8"
+}5
+"USER_INFO": {
+"UserName": "user",
+“AdminName": "admin",
+“"KeyLockEnable": @,
+“UserSum": 2,
+"UserList": [
+{
+"UserType": @,
+"Permission": @,
+"FilesLock": @,
+"SetupLock": 0,
+“DelAfterUpload": @,
+"Overwrite”: 1,
+"“UploadFileEn": 1,
+“FilesHaveUpload": @,
+“FilesNoUpload”:
+“UsedStorageKB":
+“ButtLockAudio”:
+"ButtLockVideo":
+"ButtLockIR": 0,
+“"ButtLockPower": 0,
+DULLLUCKoOIIap . Uy
+"ButtLockSOS": @,
+"ButtLockSpecial": @,
+"ButtLockMenu": @,
+"ButtLockDown": @,
+"ButtLockUp": @,
+"ButtLockEsc": @,
+"UserID": "@0@00001",
+"UserName": "admin",
+"Password": "F7BAEF4AQ@D253885 351E8C44710D2D8",
+“DepartmentID": "@eee1",
+
+"Department": “admingroup",
+"LastAccess": "27/06/24-14:17:20",
+“LastUpload": "",
+"UpdateTime": ""
+
+}s
+
+{
+
+"UserType": 1,
+"Permission": @,
+"FilesLock": @,
+"SetupLock": @,
+"DelAfterUpload": @,
+"Overwrite": 0,
+“UploadFileEn": 1,
+“FilesHaveUpload": @,
+“FilesNoUpload”:
+“UsedStorageKB":
+"ButtLockAudio":
+"ButtLockVideo":
+“"ButtLockIR": 6,
+"ButtLockPower": @,
+
+"ButtLockSnap": @,
+
+"ButtLockSOS": @,
+
+"ButtLockSpecial": @,
+
+"ButtLockMenu": @,
+
+"ButtLockDown": @,
+
+"ButtLockUp": @,
+
+"ButtLockEsc": @,
+
+"UserID": "00124",
+
+"UserName": "user1",
+
+"Password": "F7BAEF4A@@D253885 351E8C44716D2D8",
+“DepartmentID": "“asdas",
+
+"Department": "12312",
+
+“LastAccess": ""
+“LastUpload": "",
+“UpdateTime": ""
+
+]
+
+Ie
+
+"BATTERY_INFO": {
+“bat_value": 4286,
+“bat_percent": 100,
+“bat_status": 2,
+“bat_health": 100,
+“bat_current": @,
+“bat_mah": 4200
+
+device subscribe
+device/${typeNo}/manage/get-configs
+example: device/220109000123/manage/get-configs
+
+receive messages from the client:
+SESSLONIG «© aVAIU/YSARM-DEQSGJAVV »
+
+“typeCode": “server”,
+“typeNo": "@e1",
+"version": "1.0.0",
+“timestamp”: 1715929735,
+"data": {
+"structs": "“DEVICE_INFO,SYSTEM_INFO,USER_INFO, BATTERY_INFO"
+}
+t
+
+update configs
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/update-configs-result
+example: server/@@1/aVdjQ7Q5HRM-bFgSGjxvv/manage/update-configs-result
+
+receive messages from the device:
+
+“typeCode": “device”,
+"typeNo": "22e19000123",
+"version": "1.0.0",
+"timestamp": 1715929735,
+"“dataEncryptionMode": "PLAIN",
+"data": “success"//fail
+
+device subscribe
+device/${typeNo}/manage/update-configs
+example: device/22010000123/manage/update-configs
+
+receive messages from the client:
+
+{
+"sessionId": "“aVdjQ7QSHRM-bFqSGjxvv",
+"“typeCode": “server”,
+“typeNo": "@@1",
+"version": "1.0.0",
+
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": {
+
+"VIDEO_INFO": {
+“vin_anti_filter": 1,
+"vin_warp_type": 1,
+“vin_mirror"™: 1,
+“vin_up_sample": @,
+“vin_external_sensor_enable": @,
+“yvin_sensor_name": "“os@5a10",
+“vin_height": 1512,
+“vin_width": 2688,
+“vin_hdr_mode": @,
+"“vin_hdr_exposure": 1,
+"slave_encode_type": 1,
+“slave_encode_mode": 1,
+“slave_resolution": 720,
+“slave_fps": 30,
+“slave_bps_min": 100000,
+“slave_bps_max": 100000,
+“slave_bps_level": 2,
+"“slave_qp_min": 27,
+"slave_qp_max": 31,
+“slave_gop": 4,
+“slave_quality": 2,
+“slave_auto_ajust": 0,
+“master_encode_type": 1,
+“master_encode_mode": 1,
+"master_resolution": 1080,
+“master_fps": 30,
+“master_bps_min": 2000000,
+“master_bps_max": 8000000,
+“master_bps_level": 0,
+“master_qp_min": 27,
+“master_qp_max": 31,
+“master_gop": 4,
+“master_quality": @
+
+Ie
+
+"AUDIO_INFO": {
+“mic_ns": @,
+“spk_ns": @,
+“mic_volume": 8,
+“spk_volume": 8,
+“ext_audio_en": @,
+"mode": @,
+"file length": 300,
+"file_type": 0,
+"pos_record'™:
+“pre_record”:
+
+.
+
+“time_setup":
+“time_start":
+
+.
+
+2ooo
+
+.
+
+“time_end": @
+}5
+"RECORD_INFO": {
+
+"status": @,
+
+"mode": @,
+
+"file length": 300,
+
+“file type": 1,
+
+“pos_record":
+
+“pre_record":
+
+“time_setup":
+
+.
+
+.
+
+2 Ooo o
+
+.
+
+“time_start":
+“time_end": @,
+"video_sound": 1,
+"“video_quality": ®
+},
+"“PLATFORM_INFO": {
+"enable": @,
+"port": 9500,
+“id_cfg": @,
+"id": "23036000094",
+“ip": "10.0.0.1",
+
+"user": "admin",
+"pass": “admin",
+"ptt": 0,
+
+“heart_beat": 120
+
+},
+
+"VOLUME_INFO": {
+“mic_volume": 8,
+“spk_volume": 8
+
+user bind
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/user-binding-result
+
+example: server/@01/aVdjQ7Q5HRM-bFqSGjxvv/manage/user-binding-result
+
+TECEIVE MI€ssaQGes IOI Uile Gevice,
+
+“typeCode": "device",
+"typeNo": "22e19900123",
+"version": "1.0.0",
+"“dataEncryptionMode": "PLAIN",
+"timestamp": 1715929735,
+"data": "success" //fail
+
+device subscribe
+device/${typeNo}/manage/user-binding
+Example: device/22010000123/manage/user-binding
+
+receive messages from the client:
+
+{
+"sessionId": “aVdjQ7QSHRM-bFqSGjxvv",
+“typeCode": “server”,
+“typeNo": "@e1",
+"version": "1.0.0",
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": {
+"userId": "0000001",
+"userName": "user"
+}
+t
+
+user unbind
+
+client subscribe
+
+${typeCode}/${typeNo}/${sessionId}/manage/user-unbind-result
+example: server/@01/aVdjQ7Q5HRM-bFqSGjxvv/manage/user-unbind-result
+
+receive messages from the device:
+
+"typeCode": "device",
+"typeNo": "22016000123",
+"version": "1.0.0",
+“dataEncryptionMode": "PLAIN",
+"timestamp": 1715929735,
+"data": “success" //fail
+
+device subscribe
+device/¢{typeNo}/manage/user-unbind
+example: device/22010000123/manage/user-unbind
+
+receive messages from the client:
+
+"sessionId": “aVdjQ7Q5HRM-bFqSGjxvv",
+“typeCode": “server”,
+
+“typeNo": "@e1",
+
+"Varsion”™: "1.0.0".
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN"
+
+bc plus
+
+client subscribe
+${typeCode}/${typeNo}/${sessionId}/manage/bc-plus-result
+example: user/admin/aVdjQ7Q5HRM-bFqSGjxvv/manage/bc-plus-result
+
+receive messages from the device:
+
+{
+“typeCode": "device",
+"typeNo": "22919900123",
+"version": "1.0.0",
+“dataEncryptionMode": "PLAIN",
+"timestamp": 1715929735,
+"data": {
+"cmd": "BC+NVCFG=...",
+"result": "OK" // BC+ protocol command executed
+t
+t
+
+device subscribe
+device/${typeNo}/manage/bc-plus
+example: device/22010000123/manage/bc-plus
+
+receive messages from the client:
+
+{
+
+"sessionId": “aVdjQ7Q5HRM-bFqSGjxvv",
+
+“typeCode": “user”,
+
+"typeNo": "admin",
+
+"version": "1.0.0",
+
+"timestamp": 1715929735,
+
+“dataEncryptionMode": "PLAIN",
+
+"data": “BC+NVCFG=..." // BC+ protocol command
+t
+
+firmware info
+
+device subscribe
+
+device/${typeNo}/manage/device/get-firmware-info-result
+example: device/22010000123/manage//device/get-firmware-info-result
+
+receive messages from the client:
+
+{
+"sessionId": "“asdasda123-asda12",
+"typeCode": "server",
+“typeNo": "@e1",
+"version": "1.0.0",
+
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": {
+version 2: 1.1.4 4
+
+"release_date": "2024-2-21 00:00:00",
+
+“http_path": “http://dev2.good-tools.tech/firmware-package/test.bin",
+"md5": "xXxxXxXxxx",
+
+"action": "update", //query
+
+“update_time": "1729@89580" //UTC(+00:20)
+
+iot contig
+
+device subscribe
+device/${typeNo}/manage/device/get-iot-config-result
+
+example: device/22010000123/manage//device/get-iot-config-result
+p g g g
+
+"sessionId": "“asdasda123-asda12",
+"“typeCode": “server”,
+“typeNo": "@@1",
+"version": "1.0.0",
+"timestamp": 1715929735,
+“dataEncryptionMode": "PLAIN",
+"data": {
+“dasInternalIp": "192.168.1.233",
+"“dasInternalIpUploadPort": "9527",
+"dasExternalIp": "202.13.33.11",
+
+MAQTT Debug Tool
+
+MQTTX download
+

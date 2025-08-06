@@ -1,0 +1,439 @@
+import uuid
+import logging
+from typing import Annotated, Optional
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_, update, func
+
+from app import schemas
+from app.api import dependencies
+from app.db.session import get_async_db
+from app.data_access import crud_journey_sessions, crud_vehicles, crud_drivers, crud_devices
+from app.models import JourneySession, Vehicle, Driver, Device
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+@router.post("/", response_model=schemas.journey_session_schemas.JourneySessionRead, status_code=status.HTTP_201_CREATED)
+async def create_journey_session(
+    journey_in: schemas.journey_session_schemas.JourneySessionCreate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Tạo ca làm việc mới."""
+    
+    # 1. Kiểm tra vehicle tồn tại
+    if not await crud_vehicles.exists(db=db, id=journey_in.vehicle_id):
+        raise HTTPException(status_code=404, detail="Xe không tồn tại")
+    
+    # 2. Kiểm tra driver tồn tại
+    if not await crud_drivers.exists(db=db, id=journey_in.driver_id):
+        raise HTTPException(status_code=404, detail="Tài xế không tồn tại")
+    
+    # 3. Kiểm tra xe đã có ca làm việc active chưa
+    existing_active = await db.execute(
+        select(JourneySession).where(
+            and_(
+                JourneySession.vehicle_id == journey_in.vehicle_id,
+                JourneySession.status == 'active',
+                JourneySession.end_time.is_(None)
+            )
+        )
+    )
+    if existing_active.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400, 
+            detail="Xe này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
+        )
+    
+    # 4. Kiểm tra tài xế đã có ca làm việc active chưa
+    existing_driver_active = await db.execute(
+        select(JourneySession).where(
+            and_(
+                JourneySession.driver_id == journey_in.driver_id,
+                JourneySession.status == 'active'
+            )
+        )
+    )
+    if existing_driver_active.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Tài xế này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
+        )
+
+    # 5. Kiểm tra trùng lịch cho xe (overlap checking)
+    existing_vehicle_overlap = await db.execute(
+        select(JourneySession).where(
+            and_(
+                JourneySession.vehicle_id == journey_in.vehicle_id,
+                JourneySession.status.in_(['pending', 'active']),
+                # Check overlap: new_start < existing_end AND new_end > existing_start
+                and_(
+                    journey_in.start_time < JourneySession.end_time,
+                    journey_in.end_time > JourneySession.start_time
+                )
+            )
+        )
+    )
+    if existing_vehicle_overlap.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Xe này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
+        )
+
+    # 6. Kiểm tra trùng lịch cho tài xế (overlap checking)
+    existing_driver_overlap = await db.execute(
+        select(JourneySession).where(
+            and_(
+                JourneySession.driver_id == journey_in.driver_id,
+                JourneySession.status.in_(['pending', 'active']),
+                # Check overlap: new_start < existing_end AND new_end > existing_start
+                and_(
+                    journey_in.start_time < JourneySession.end_time,
+                    journey_in.end_time > JourneySession.start_time
+                )
+            )
+        )
+    )
+    if existing_driver_overlap.scalar_one_or_none():
+        raise HTTPException(
+            status_code=400,
+            detail="Tài xế này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
+        )
+    
+    # 7. Tạo journey session với status='pending'
+    return await crud_journey_sessions.create(db=db, object=journey_in)
+
+@router.get("/", response_model=PaginatedListResponse[schemas.journey_session_schemas.JourneySessionWithDetails])
+async def get_journey_sessions(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    page: int = 1,
+    items_per_page: int = 10,
+    status_filter: Optional[str] = None
+):
+    """Lấy danh sách ca làm việc với pagination và thông tin chi tiết."""
+
+    # Build query với joins để lấy thông tin chi tiết
+    stmt = (
+        select(
+            JourneySession,
+            Vehicle.plate_number,
+            Driver.full_name,
+            Device.imei
+        )
+        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
+        .order_by(JourneySession.start_time.desc())
+    )
+
+    # Apply status filter if provided
+    if status_filter:
+        stmt = stmt.where(JourneySession.status == status_filter)
+
+    # Apply pagination
+    offset = compute_offset(page, items_per_page)
+    stmt = stmt.offset(offset).limit(items_per_page)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # Transform to response schema
+    journey_sessions = []
+    for row in rows:
+        journey, plate_number, driver_name, device_imei = row
+        session_data = schemas.journey_session_schemas.JourneySessionWithDetails(
+            id=journey.id,
+            vehicle_id=journey.vehicle_id,
+            driver_id=journey.driver_id,
+            start_time=journey.start_time,
+            end_time=journey.end_time,
+            total_distance_km=journey.total_distance_km,
+            notes=journey.notes,
+            status=journey.status,
+            activated_at=journey.activated_at,
+            vehicle_plate_number=plate_number,
+            driver_name=driver_name,
+            device_imei=device_imei
+        )
+        journey_sessions.append(session_data)
+
+    # Get total count for pagination
+    count_stmt = select(func.count(JourneySession.id))
+    if status_filter:
+        count_stmt = count_stmt.where(JourneySession.status == status_filter)
+
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar()
+
+    # Return paginated response
+    return {
+        "data": journey_sessions,
+        "total": total or 0,
+        "page": page,
+        "items_per_page": items_per_page,
+        "pages": ((total or 0) + items_per_page - 1) // items_per_page
+    }
+
+@router.get("/active", response_model=list[schemas.journey_session_schemas.JourneySessionWithDetails])
+async def get_active_journey_sessions(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Lấy danh sách ca làm việc đang active - cho Processing Service."""
+    
+    # Query với join để lấy thông tin chi tiết
+    stmt = (
+        select(
+            JourneySession,
+            Vehicle.plate_number,
+            Driver.full_name,
+            Device.imei
+        )
+        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
+        .where(JourneySession.status == 'active')
+        .order_by(JourneySession.activated_at.desc())
+    )
+    
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    # Transform to response schema
+    active_sessions = []
+    for row in rows:
+        journey, plate_number, driver_name, device_imei = row
+        session_data = schemas.journey_session_schemas.JourneySessionWithDetails(
+            id=journey.id,
+            vehicle_id=journey.vehicle_id,
+            driver_id=journey.driver_id,
+            start_time=journey.start_time,
+            end_time=journey.end_time,
+            total_distance_km=journey.total_distance_km,
+            notes=journey.notes,
+            status=journey.status,
+            activated_at=journey.activated_at,
+            vehicle_plate_number=plate_number,
+            driver_name=driver_name,
+            device_imei=device_imei
+        )
+        active_sessions.append(session_data)
+    
+    return active_sessions
+
+@router.get("/{session_id}", response_model=schemas.journey_session_schemas.JourneySessionWithDetails)
+async def get_journey_session(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Lấy chi tiết ca làm việc."""
+    
+    # Query với join để lấy thông tin chi tiết
+    stmt = (
+        select(
+            JourneySession,
+            Vehicle.plate_number,
+            Driver.full_name,
+            Device.imei
+        )
+        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
+        .where(JourneySession.id == session_id)
+    )
+    
+    result = await db.execute(stmt)
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+    
+    journey, plate_number, driver_name, device_imei = row
+    
+    return schemas.journey_session_schemas.JourneySessionWithDetails(
+        id=journey.id,
+        vehicle_id=journey.vehicle_id,
+        driver_id=journey.driver_id,
+        start_time=journey.start_time,
+        end_time=journey.end_time,
+        total_distance_km=journey.total_distance_km,
+        notes=journey.notes,
+        status=journey.status,
+        activated_at=journey.activated_at,
+        vehicle_plate_number=plate_number,
+        driver_name=driver_name,
+        device_imei=device_imei
+    )
+
+@router.post("/{session_id}/start", response_model=schemas.journey_session_schemas.JourneySessionRead)
+async def start_journey_session(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Bắt đầu ca làm việc - chuyển status thành 'active'."""
+
+    # 1. Lấy journey session để kiểm tra status
+    journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+    if not journey:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+
+    # 2. Kiểm tra status hiện tại - handle both dict and Pydantic model
+    current_status = getattr(journey, 'status', journey.get('status') if isinstance(journey, dict) else None)
+    if current_status != 'pending':
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể bắt đầu ca làm việc. Trạng thái hiện tại: {current_status}"
+        )
+
+    # 3. Cập nhật status và activated_at bằng SQL update
+    await db.execute(
+        update(JourneySession)
+        .where(JourneySession.id == session_id)
+        .values(
+            status='active',
+            activated_at=datetime.now(timezone.utc)
+        )
+    )
+    await db.commit()
+
+    # 4. Lấy lại data đã update
+    updated_journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+
+
+    return updated_journey
+
+@router.post("/{session_id}/end", response_model=schemas.journey_session_schemas.JourneySessionRead)
+async def end_journey_session(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Kết thúc ca làm việc - chuyển status thành 'completed'."""
+
+    # 1. Lấy journey session để kiểm tra status
+    journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+    if not journey:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+
+    # 2. Kiểm tra status hiện tại - handle both dict and Pydantic model
+    current_status = getattr(journey, 'status', journey.get('status') if isinstance(journey, dict) else None)
+    if current_status != 'active':
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không thể kết thúc ca làm việc. Trạng thái hiện tại: {current_status}"
+        )
+
+    # 3. Cập nhật status và end_time bằng SQL update
+    await db.execute(
+        update(JourneySession)
+        .where(JourneySession.id == session_id)
+        .values(
+            status='completed',
+            end_time=datetime.now(timezone.utc)
+        )
+    )
+    await db.commit()
+
+    # 4. Lấy lại data đã update
+    updated_journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+
+
+    return updated_journey
+
+@router.get("/{session_id}/status")
+async def get_journey_session_status(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Kiểm tra trạng thái ca làm việc."""
+
+    journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+    if not journey:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+
+    # Handle both dict and Pydantic model
+    return {
+        "session_id": session_id,
+        "status": getattr(journey, 'status', journey.get('status') if isinstance(journey, dict) else None),
+        "activated_at": getattr(journey, 'activated_at', journey.get('activated_at') if isinstance(journey, dict) else None),
+        "start_time": getattr(journey, 'start_time', journey.get('start_time') if isinstance(journey, dict) else None),
+        "end_time": getattr(journey, 'end_time', journey.get('end_time') if isinstance(journey, dict) else None)
+    }
+
+@router.put("/{session_id}", response_model=schemas.journey_session_schemas.JourneySessionRead)
+async def update_journey_session(
+    session_id: int,
+    journey_update: schemas.journey_session_schemas.JourneySessionUpdate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Cập nhật thông tin ca làm việc."""
+    
+    # Kiểm tra journey session tồn tại
+    if not await crud_journey_sessions.exists(db=db, id=session_id):
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+    
+    # Cập nhật
+    await crud_journey_sessions.update(db=db, object=journey_update, id=session_id)
+    
+    # Trả về dữ liệu đã cập nhật
+    updated_journey = await crud_journey_sessions.get(db=db, id=session_id)
+    return updated_journey
+
+@router.delete("/{session_id}")
+async def delete_journey_session(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Xóa ca làm việc."""
+
+    # Kiểm tra journey session tồn tại
+    journey = await crud_journey_sessions.get(
+        db=db,
+        id=session_id,
+        schema_to_select=schemas.journey_session_schemas.JourneySessionRead
+    )
+    if not journey:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+
+    # Không cho phép xóa ca đang active - handle both dict and Pydantic model
+    current_status = getattr(journey, 'status', journey.get('status') if isinstance(journey, dict) else None)
+    if current_status == 'active':
+        raise HTTPException(
+            status_code=400,
+            detail="Không thể xóa ca làm việc đang hoạt động. Vui lòng kết thúc ca trước."
+        )
+
+    # Xóa
+    await crud_journey_sessions.delete(db=db, id=session_id)
+
+    return {"message": "Ca làm việc đã được xóa thành công"}
