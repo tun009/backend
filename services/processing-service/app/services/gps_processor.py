@@ -253,7 +253,7 @@ class GPSProcessor:
                 "version": "1.0.0",
                 "timestamp": int(time.time()),
                 "data": {
-                    "structs": "DEVICE_INFO,SYSTEM_INFO,USER_INFO,BATTERY_INFO,GPS_INFO"
+                    "structs": "SYSTEM_INFO,BATTERY_INFO,GPS_INFO"
                 }
             }
 
