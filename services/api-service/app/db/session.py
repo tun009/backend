@@ -17,13 +17,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError(f"DATABASE_URL environment variable not set or .env file not found at {ENV_PATH}")
 
+# Convert async URL to sync URL for sync engine
+sync_database_url = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
 # Sync engine (for existing code)
-engine = create_engine(DATABASE_URL)
+engine = create_engine(sync_database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Async engine (for FastCRUD)
-async_database_url = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
-async_engine = create_async_engine(async_database_url)
+# Async engine (for FastCRUD) - use the original async URL
+async_engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine, expire_on_commit=False
 )
