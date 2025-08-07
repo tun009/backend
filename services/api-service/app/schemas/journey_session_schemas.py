@@ -65,11 +65,32 @@ class JourneySessionWithDetails(BaseModel):
     notes: Optional[str]
     status: Optional[str]
     activated_at: Optional[datetime]
-    
+
     # Related data (will be populated by API)
     vehicle_plate_number: Optional[str] = Field(None, description="Biển số xe")
     driver_name: Optional[str] = Field(None, description="Tên tài xế")
     device_imei: Optional[str] = Field(None, description="IMEI thiết bị")
-    
+
+    class Config:
+        from_attributes = True
+
+class JourneySessionRealtime(BaseModel):
+    """Schema for active JourneySession with realtime data from device_logs."""
+    id: int
+    vehicle_id: uuid.UUID
+    driver_id: uuid.UUID
+    start_time: datetime
+    end_time: Optional[datetime]
+    status: Optional[str]
+    activated_at: Optional[datetime]
+
+    # Related data
+    plate_number: Optional[str] = Field(None, description="Biển số xe")
+    driver_name: Optional[str] = Field(None, description="Tên tài xế")
+    imei: Optional[str] = Field(None, description="IMEI thiết bị")
+
+    # Realtime data (toàn bộ mqtt_response từ device_logs)
+    realtime: dict = Field(default_factory=dict, description="Dữ liệu realtime từ device logs")
+
     class Config:
         from_attributes = True

@@ -11,8 +11,8 @@ from sqlalchemy import select, and_, update, func
 from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
-from app.data_access import crud_journey_sessions, crud_vehicles, crud_drivers, crud_devices
-from app.models import JourneySession, Vehicle, Driver, Device
+from app.data_access import crud_journey_sessions, crud_vehicles, crud_drivers, crud_devices, crud_device_logs
+from app.models import JourneySession, Vehicle, Driver, Device, DeviceLog
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -222,8 +222,113 @@ async def get_active_journey_sessions(
             device_imei=device_imei
         )
         active_sessions.append(session_data)
-    
+
     return active_sessions
+
+@router.get("/active/realtime", response_model=PaginatedListResponse[schemas.journey_session_schemas.JourneySessionRealtime])
+async def get_active_journey_sessions_with_realtime(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    page: int = 1,
+    items_per_page: int = 10
+):
+
+    # 1. Query active journey sessions với thông tin liên quan
+    now = datetime.now(timezone.utc)
+
+    stmt = (
+        select(
+            JourneySession,
+            Vehicle.plate_number,
+            Driver.full_name,
+            Device.imei
+        )
+        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
+        .where(
+            and_(
+                JourneySession.status == 'active',
+                JourneySession.start_time <= now,
+                JourneySession.end_time >= now
+            )
+        )
+        .order_by(JourneySession.activated_at.desc())
+    )
+
+    # Apply pagination
+    offset = compute_offset(page, items_per_page)
+    stmt = stmt.offset(offset).limit(items_per_page)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    # 2. Get total count for pagination
+    count_stmt = (
+        select(func.count(JourneySession.id))
+        .where(
+            and_(
+                JourneySession.status == 'active',
+                JourneySession.start_time <= now,
+                JourneySession.end_time >= now
+            )
+        )
+    )
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar()
+
+    # 3. Transform to response schema and get latest GPS data
+    sessions_with_realtime = []
+
+    for row in rows:
+        journey, plate_number, driver_name, device_imei = row
+
+        # Initialize session data
+        session_data = schemas.journey_session_schemas.JourneySessionRealtime(
+            id=journey.id,
+            vehicle_id=journey.vehicle_id,
+            driver_id=journey.driver_id,
+            start_time=journey.start_time,
+            end_time=journey.end_time,
+            status=journey.status,
+            activated_at=journey.activated_at,
+            plate_number=plate_number,
+            driver_name=driver_name,
+            imei=device_imei,
+            realtime={}
+        )
+
+        # 4. Get latest GPS data from device_logs if device exists
+        if device_imei:
+            latest_log_stmt = (
+                select(
+                    DeviceLog.mqtt_response,
+                    DeviceLog.collected_at
+                )
+                .where(DeviceLog.journey_session_id == journey.id)
+                .order_by(DeviceLog.collected_at.desc())
+                .limit(1)
+            )
+
+            log_result = await db.execute(latest_log_stmt)
+            log_row = log_result.first()
+
+            if log_row:
+                mqtt_response, collected_at = log_row
+
+                if mqtt_response:
+                    # Gán toàn bộ mqtt_response vào trường realtime
+                    session_data.realtime = mqtt_response
+
+        sessions_with_realtime.append(session_data)
+
+    # 5. Return paginated response
+    fake_crud_data = {
+        "data": sessions_with_realtime,
+        "total_count": total or 0
+    }
+
+    return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
 
 @router.get("/{session_id}", response_model=schemas.journey_session_schemas.JourneySessionWithDetails)
 async def get_journey_session(
@@ -440,3 +545,6 @@ async def delete_journey_session(
     await crud_journey_sessions.delete(db=db, id=session_id)
 
     return {"message": "Ca làm việc đã được xóa thành công"}
+
+
+
