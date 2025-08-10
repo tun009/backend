@@ -1,3 +1,4 @@
+
 version: '3.8'
 
 services:
@@ -13,6 +14,11 @@ services:
     volumes:
       - obu_db_data:/var/lib/postgresql/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d obu_service"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -23,25 +29,61 @@ services:
       - obu_redis_data:/data
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-  # api-service:
-  #   container_name: obu_api_service
-  #   build:
-  #     context: ../services/api-service
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     - db
-  #     - redis
-  #   restart: unless-stopped
-  #   environment:
-  #     - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
-  #     - REDIS_URL=redis://redis:6379/0
+  api-service:
+    container_name: obu_api_service
+    build:
+      context: ../services/api-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+    env_file:
+      - ../services/api-service/.env
+    networks:
+      - obu_network
+
+  processing-service:
+    container_name: obu_processing_service
+    build:
+      context: ../services/processing-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
+      - REDIS_URL=redis://redis:6379/0
+    networks:
+      - obu_network
 
 volumes:
   obu_db_data:
     name: obu_db_volume
   obu_redis_data:
     name: obu_redis_volume
+
+networks:
+  obu_network:
+    driver: bridge
+
 
