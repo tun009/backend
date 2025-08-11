@@ -34,9 +34,9 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
-      retries: 
-    networks:              # ← THÊM DÒNG NÀY
-      - obu_network        # ← THÊM DÒNG NÀY
+      retries: 3
+    networks:            
+      - obu_network      
 
   api-service:
     container_name: obu_api_service
