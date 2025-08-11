@@ -49,7 +49,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
+      - DATABASE_URL=postgresql+asyncpg://admin:password@db:5432/obu_service
       - REDIS_URL=redis://redis:6379/0
       - REDIS_HOST=redis
     env_file:
@@ -71,7 +71,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     environment:
-      - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
+      - DATABASE_URL=postgresql+asyncpg://admin:password@db:5432/obu_service
       - REDIS_URL=redis://redis:6379/0
     networks:
       - obu_network
