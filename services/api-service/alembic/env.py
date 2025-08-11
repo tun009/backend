@@ -24,6 +24,11 @@ target_metadata = Base.metadata
 
 # Get database URL from environment variable or use default
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:password@localhost:5432/obu_service")
+
+# Convert async URL to sync URL for Alembic (if needed)
+if "postgresql+asyncpg://" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
+
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 

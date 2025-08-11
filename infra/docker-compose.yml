@@ -48,7 +48,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql+asyncpg://admin:password@db:5432/obu_service
+      - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
     networks:
       - obu_network
     restart: "no"  # Chỉ chạy một lần
