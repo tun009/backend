@@ -19,7 +19,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
+    networks:            
+      - obu_network        
   redis:
     image: redis:7-alpine
     container_name: obu_redis
@@ -33,7 +34,9 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 
+    networks:              # ← THÊM DÒNG NÀY
+      - obu_network        # ← THÊM DÒNG NÀY
 
   api-service:
     container_name: obu_api_service
