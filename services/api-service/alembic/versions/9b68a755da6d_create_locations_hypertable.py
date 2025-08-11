@@ -19,24 +19,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create the locations table
-    op.create_table('locations',
-        sa.Column('time', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('device_imei', sa.String(length=50), nullable=False),
-        sa.Column('latitude', sa.Float(), nullable=False),
-        sa.Column('longitude', sa.Float(), nullable=False),
-        sa.Column('speed_kph', sa.SmallInteger(), nullable=True),
-        sa.Column('heading', sa.SmallInteger(), nullable=True),
-        sa.Column('engine_status', sa.Boolean(), nullable=True),
-        sa.Column('fuel_level', sa.SmallInteger(), nullable=True),
-        sa.Column('altitude_m', sa.Float(), nullable=True),
-        sa.Column('satellite_count', sa.SmallInteger(), nullable=True),
-        sa.PrimaryKeyConstraint('time', 'device_imei')
-    )
-    
-    # Execute the TimescaleDB function to convert the table to a hypertable
-    op.execute("SELECT create_hypertable('locations', 'time');")
+    # Table 'locations' already created in migration 468c8900f6c8
+    # This migration is now redundant - no action needed
+    pass
 
 
 def downgrade() -> None:
-    op.drop_table('locations')
+    # Table 'locations' managed by migration 468c8900f6c8
+    # This migration is now redundant - no action needed
+    pass
