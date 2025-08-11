@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), ".."
 from app.models import Base
 target_metadata = Base.metadata
 
-# Hardcode the database URL here for simplicity and reliability
-DATABASE_URL = "postgresql://admin:password@localhost:5432/obu_service"
+# Get database URL from environment variable or use default
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:password@localhost:5432/obu_service")
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 
