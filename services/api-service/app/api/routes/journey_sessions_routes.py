@@ -1,7 +1,7 @@
 import uuid
 import logging
 from typing import Annotated, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
@@ -16,6 +16,9 @@ from app.models import JourneySession, Vehicle, Driver, Device, DeviceLog
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Múi giờ Việt Nam (UTC+7)
+vietnam_tz = timezone(timedelta(hours=7))
 
 @router.post("/", response_model=schemas.journey_session_schemas.JourneySessionRead, status_code=status.HTTP_201_CREATED)
 async def create_journey_session(
@@ -234,7 +237,7 @@ async def get_active_journey_sessions_with_realtime(
 ):
 
     # 1. Query active journey sessions với thông tin liên quan
-    now = datetime.now(timezone.utc)
+    now = datetime.now(vietnam_tz)
 
     stmt = (
         select(
@@ -406,7 +409,7 @@ async def start_journey_session(
         .where(JourneySession.id == session_id)
         .values(
             status='active',
-            activated_at=datetime.now(timezone.utc)
+            activated_at=datetime.now(vietnam_tz)
         )
     )
     await db.commit()
@@ -452,7 +455,7 @@ async def end_journey_session(
         .where(JourneySession.id == session_id)
         .values(
             status='completed',
-            end_time=datetime.now(timezone.utc)
+            end_time=datetime.now(vietnam_tz)
         )
     )
     await db.commit()

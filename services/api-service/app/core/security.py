@@ -7,6 +7,9 @@ from fastapi import HTTPException, status
 
 from .config import settings
 
+# Múi giờ Việt Nam (UTC+7)
+vietnam_tz = timezone(timedelta(hours=7))
+
 # --- Password Hashing ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -36,9 +39,9 @@ def create_access_token(
 ) -> str:
     """Creates a new Access Token."""
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = datetime.now(vietnam_tz) + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(vietnam_tz) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode = {"exp": expire, "sub": str(subject)}
     encoded_jwt = jwt.encode(

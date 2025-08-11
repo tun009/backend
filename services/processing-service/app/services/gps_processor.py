@@ -3,7 +3,7 @@ import json
 import logging
 import uuid
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import aiomqtt
 from sqlalchemy import select, and_
@@ -13,6 +13,9 @@ from app.db.session import AsyncSessionLocal
 from app.models import JourneySession, DeviceLog, Device, Vehicle
 
 logger = logging.getLogger(__name__)
+
+# Múi giờ Việt Nam (UTC+7)
+vietnam_tz = timezone(timedelta(hours=7))
 
 class GPSProcessor:
     """
@@ -153,7 +156,7 @@ class GPSProcessor:
         """Query active journey sessions với device info"""
         async with AsyncSessionLocal() as session:
             try:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(vietnam_tz)
                 
                 # Query active sessions với device và vehicle info
                 stmt = (
@@ -335,15 +338,13 @@ class GPSProcessor:
         """Save GPS data to device_logs table"""
         async with AsyncSessionLocal() as session:
             try:
-                # Extract only the data part from MQTT response
                 device_data = mqtt_response.get('data', {})
 
-                # Create device log entry with only the data part
                 device_log = DeviceLog(
                     journey_session_id=journey_session_id,
                     device_imei=device_imei,
-                    mqtt_response=device_data,  # Chỉ lưu phần data, bỏ metadata
-                    collected_at=datetime.now(timezone.utc)
+                    mqtt_response=device_data,
+                    collected_at=datetime.now(vietnam_tz)
                 )
 
                 session.add(device_log)
