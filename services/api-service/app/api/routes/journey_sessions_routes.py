@@ -319,8 +319,10 @@ async def get_active_journey_sessions_with_realtime(
             if log_row:
                 mqtt_response, collected_at = log_row
 
-                if mqtt_response:
-                    # Gán toàn bộ mqtt_response vào trường realtime
+                time_diff = now - collected_at
+                if time_diff.total_seconds() > 60: 
+                    session_data.realtime = {}
+                elif mqtt_response:
                     session_data.realtime = mqtt_response
 
         sessions_with_realtime.append(session_data)
