@@ -102,7 +102,9 @@ class JourneyHistoryPoint(BaseModel):
 
     # GPS data
     latitude: Optional[float] = None
-    gps_longitude: Optional[float] = None
+    latitude_degree: Optional[float] = None
+    longitude: Optional[float] = None
+    longitude_degree: Optional[float] = None
     gps_speed: Optional[float] = None
     gps_valid: Optional[int] = None
     gps_enable: Optional[int] = None

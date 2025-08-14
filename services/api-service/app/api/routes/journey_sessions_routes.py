@@ -391,7 +391,9 @@ async def get_journey_session_history(
             gps_info = mqtt_response.get('GPS_INFO', {})
             if gps_info:
                 history_point.latitude = gps_info.get('latitude')
-                history_point.gps_longitude = gps_info.get('longitude')
+                history_point.latitude_degree = gps_info.get('latitude_degree')
+                history_point.longitude = gps_info.get('longitude')
+                history_point.longitude_degree = gps_info.get('longitude_degree')
                 history_point.gps_speed = gps_info.get('speed')
                 history_point.gps_valid = gps_info.get('valid')
                 history_point.gps_enable = gps_info.get('enable')
@@ -632,10 +634,13 @@ async def delete_journey_session(
             detail="Không thể xóa ca làm việc đang hoạt động. Vui lòng kết thúc ca trước."
         )
 
-    # Xóa
+    # Xóa device_logs trước (để tránh foreign key constraint)
+    await db.execute(
+        DeviceLog.__table__.delete().where(DeviceLog.journey_session_id == session_id)
+    )
     await crud_journey_sessions.delete(db=db, id=session_id)
 
-    return {"message": "Ca làm việc đã được xóa thành công"}
+    return {"message": "Ca làm việc và dữ liệu liên quan đã được xóa thành công"}
 
 
 
