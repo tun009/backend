@@ -335,6 +335,92 @@ async def get_active_journey_sessions_with_realtime(
 
     return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
 
+@router.get("/{session_id}/history", response_model=schemas.journey_session_schemas.JourneySessionHistoryResponse)
+async def get_journey_session_history(
+    session_id: int,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Lấy lịch sử hành trình của ca làm việc theo session_id."""
+
+    journey_stmt = (
+        select(
+            JourneySession.id,
+            Vehicle.plate_number,
+            Driver.full_name,
+            Device.imei
+        )
+        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
+        .where(JourneySession.id == session_id)
+    )
+
+    journey_result = await db.execute(journey_stmt)
+    journey_row = journey_result.first()
+
+    if not journey_row:
+        raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
+
+    journey_id, plate_number, driver_name, device_imei = journey_row
+
+    logs_stmt = (
+        select(
+            DeviceLog.id,
+            DeviceLog.collected_at,
+            DeviceLog.mqtt_response
+        )
+        .where(DeviceLog.journey_session_id == session_id)
+        .order_by(DeviceLog.collected_at.asc())  # Sắp xếp theo thời gian tăng dần
+    )
+
+    logs_result = await db.execute(logs_stmt)
+    log_rows = logs_result.all()
+
+    history_points = []
+
+    for row in log_rows:
+        log_id, collected_at, mqtt_response = row
+
+        history_point = schemas.journey_session_schemas.JourneyHistoryPoint(
+            id=log_id,
+            collected_at=collected_at
+        )
+
+        if mqtt_response and isinstance(mqtt_response, dict):
+            gps_info = mqtt_response.get('GPS_INFO', {})
+            if gps_info:
+                history_point.latitude = gps_info.get('latitude')
+                history_point.gps_longitude = gps_info.get('longitude')
+                history_point.gps_speed = gps_info.get('speed')
+                history_point.gps_valid = gps_info.get('valid')
+                history_point.gps_enable = gps_info.get('enable')
+
+            battery_info = mqtt_response.get('BATTERY_INFO', {})
+            if battery_info:
+                history_point.bat_percent = battery_info.get('bat_percent')
+
+        history_points.append(history_point)
+
+    start_time = None
+    end_time = None
+
+    if history_points:
+        start_time = history_points[0].collected_at
+        end_time = history_points[-1].collected_at  
+
+    response = schemas.journey_session_schemas.JourneySessionHistoryResponse(
+        data=history_points,
+        plate_number=plate_number,
+        driver_name=driver_name,
+        imei=device_imei,
+        id=journey_id,
+        start_time=start_time,
+        end_time=end_time
+    )
+
+    return response
+
 @router.get("/{session_id}", response_model=schemas.journey_session_schemas.JourneySessionWithDetails)
 async def get_journey_session(
     session_id: int,

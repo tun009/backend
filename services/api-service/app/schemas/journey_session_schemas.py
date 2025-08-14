@@ -1,6 +1,6 @@
 import uuid
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 
@@ -92,5 +92,35 @@ class JourneySessionRealtime(BaseModel):
     # Realtime data (toàn bộ mqtt_response từ device_logs)
     realtime: dict = Field(default_factory=dict, description="Dữ liệu realtime từ device logs")
 
+    class Config:
+        from_attributes = True
+
+class JourneyHistoryPoint(BaseModel):
+    """Schema for journey history point with essential GPS and battery data."""
+    id: int
+    collected_at: datetime
+
+    # GPS data
+    latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_speed: Optional[float] = None
+    gps_valid: Optional[int] = None
+    gps_enable: Optional[int] = None
+
+    # Battery data
+    bat_percent: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class JourneySessionHistoryResponse(BaseModel):
+    """Schema for journey session history response."""
+    plate_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    imei: Optional[str] = None
+    id: int
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    data: List[JourneyHistoryPoint]
     class Config:
         from_attributes = True
