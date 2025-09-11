@@ -14,4 +14,5 @@ aioredis>=2.0.1
 aiomqtt>=2.0.0
 fastcrud>=0.15.0
 apscheduler
+httpx
 
