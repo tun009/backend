@@ -89,6 +89,7 @@ class JourneySessionRealtime(BaseModel):
     driver_name: Optional[str] = Field(None, description="Tên tài xế")
     imei: Optional[str] = Field(None, description="IMEI thiết bị")
 
+    thumbnail_url: Optional[str] = Field(None, description="URL ảnh thumbnail gần nhất của thiết bị")
     # Realtime data (toàn bộ mqtt_response từ device_logs)
     realtime: dict = Field(default_factory=dict, description="Dữ liệu realtime từ device logs")
 

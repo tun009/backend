@@ -7,7 +7,9 @@ import time
 import logging
 from app.api.api_router import api_router
 from app.core.config import settings
+from app.core.redis_client import RedisClient
 from app.services.mqtt_service import MQTTPersistentService
+from app.services.journey_scheduler import scheduler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,12 +23,22 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting OBU Service API...")
 
     try:
-        # Initialize MQTT persistent connection
+        await RedisClient.initialize()
+        logger.info("✅ Redis client initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Redis: {e}")
+
+    try:
         await MQTTPersistentService.initialize()
         logger.info("✅ MQTT persistent connection initialized")
     except Exception as e:
         logger.error(f"❌ Failed to initialize MQTT: {e}")
-        # Continue without MQTT - graceful degradation
+
+    try:
+        scheduler.start()
+        logger.info("✅ Journey scheduler started")
+    except Exception as e:
+        logger.error(f"❌ Failed to start journey scheduler: {e}")
 
     logger.info("🎉 OBU Service API started successfully")
 
@@ -36,11 +48,22 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down OBU Service API...")
 
     try:
-        # Close MQTT persistent connection
+        scheduler.shutdown()
+        logger.info("✅ Journey scheduler shut down")
+    except Exception as e:
+        logger.error(f"❌ Error shutting down journey scheduler: {e}")
+
+    try:
         await MQTTPersistentService.close()
         logger.info("✅ MQTT persistent connection closed")
     except Exception as e:
         logger.error(f"❌ Error closing MQTT: {e}")
+
+    try:
+        await RedisClient.close()
+        logger.info("✅ Redis client closed")
+    except Exception as e:
+        logger.error(f"❌ Error closing Redis: {e}")
 
     logger.info("👋 OBU Service API shutdown complete")
 

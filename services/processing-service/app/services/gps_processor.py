@@ -134,7 +134,6 @@ class GPSProcessor:
                 
                 # 1. Query active journey sessions
                 active_sessions = await self._get_active_journey_sessions()
-                
                 if not active_sessions:
                     logger.info("📭 No active journey sessions found")
                 else:
@@ -181,7 +180,6 @@ class GPSProcessor:
                 
                 result = await session.execute(stmt)
                 sessions = []
-                
                 for row in result:
                     sessions.append({
                         'id': row.id,
