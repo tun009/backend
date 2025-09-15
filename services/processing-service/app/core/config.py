@@ -20,8 +20,8 @@ class Settings:
     # --- MQTT Settings (từ api-service) ---
     MQTT_BROKER_HOST: str = os.getenv("MQTT_BROKER_HOST", "103.21.151.183")
     MQTT_BROKER_PORT: int = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-    MQTT_USERNAME: str = os.getenv("MQTT_USERNAME", "dev1")
-    MQTT_PASSWORD: str = os.getenv("MQTT_PASSWORD", "dev1")
+    MQTT_USERNAME: str = os.getenv("MQTT_USERNAME", "admin")
+    MQTT_PASSWORD: str = os.getenv("MQTT_PASSWORD", "Elcom@123")
     MQTT_USER_NO: str = os.getenv("MQTT_USER_NO", "kh4423")
     MQTT_TIMEOUT: int = int(os.getenv("MQTT_TIMEOUT", "10"))
     
