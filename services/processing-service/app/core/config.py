@@ -26,9 +26,13 @@ class Settings:
     MQTT_TIMEOUT: int = int(os.getenv("MQTT_TIMEOUT", "10"))
     
     # --- Processing Settings ---
-    SCAN_INTERVAL: int = int(os.getenv("GPS_COLLECTION_INTERVAL", "5"))  # Use GPS_COLLECTION_INTERVAL from .env
+    SCAN_INTERVAL: int = int(os.getenv("GPS_COLLECTION_INTERVAL", "10"))  # Use GPS_COLLECTION_INTERVAL from .env
     MAX_CONCURRENT_DEVICES: int = int(os.getenv("MAX_CONCURRENT_DEVICES", "5"))
-    
+
+
+    # --- Retry Configuration ---
+    MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "5"))
+    RETRY_DELAY: int = int(os.getenv("RETRY_DELAY", "20")) # Base delay in seconds
     # --- Logging Settings ---
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 

@@ -37,119 +37,165 @@ class GPSProcessor:
         self.max_concurrent = settings.MAX_CONCURRENT_DEVICES
         
         # MQTT client (singleton pattern)
+        # Retry settings
+        self.max_retries = settings.MAX_RETRIES
+        self.retry_delay = settings.RETRY_DELAY
+
+        # MQTT client (singleton pattern)
         self._client: Optional[aiomqtt.Client] = None
         self._connected = False
+        self._reconnecting = False # Flag to prevent multiple reconnect loops
         self._pending_requests: Dict[str, asyncio.Future] = {}
-        self._response_listener_task: Optional[asyncio.Task] = None
+        self._connection_handler_task: Optional[asyncio.Task] = None
         
         # Processing state
         self._running = False
         self._scan_task: Optional[asyncio.Task] = None
         
     async def initialize(self):
-        """Initialize MQTT connection (một lần duy nhất)"""
-        if self._connected:
-            logger.info("MQTT already connected")
+        """Starts the connection manager task."""
+        if self._connection_handler_task:
+            logger.warning("Connection handler already running.")
             return
-            
-        try:
-            logger.info(f"🔌 Connecting to MQTT broker: {self.broker_host}:{self.broker_port}")
-            
-            # Create MQTT client
-            client_id = f"obu_processor_{self.user_no}_{int(time.time())}"
-            self._client = aiomqtt.Client(
-                hostname=self.broker_host,
-                port=self.broker_port,
-                username=self.username,
-                password=self.password,
-                keepalive=60,
-                identifier=client_id
-            )
-            
-            # Connect
-            await self._client.__aenter__()
-            self._connected = True
-            
-            # Subscribe to response topics
-            response_topic = f"user/{self.user_no}/+/manage/get-configs-result"
-            await self._client.subscribe(response_topic)
-            logger.info(f"📡 Subscribed to: {response_topic}")
-            
-            # Start response listener
-            self._response_listener_task = asyncio.create_task(self._listen_responses())
-            
-            logger.info("✅ MQTT connection established successfully")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to connect MQTT: {e}")
+        self._connection_handler_task = asyncio.create_task(self._manage_connection())
+
+    async def _manage_connection(self):
+        """Manages the MQTT connection and handles reconnection."""
+        while self._running:
+            try:
+                logger.info("Attempting to establish MQTT connection...")
+                await self._connect_mqtt()
+                logger.info("MQTT connection is live. Starting message listener.")
+                await self._listen_responses() # This runs until disconnection
+
+            except aiomqtt.MqttError as e:
+                logger.error(f"MQTT connection error: {e}. Starting reconnection logic.")
+            except asyncio.CancelledError:
+                logger.info("Connection manager cancelled.")
+                break
+            except Exception as e:
+                logger.error(f"An unexpected error occurred in connection manager: {e}")
+
+            # --- Reconnection Logic ---
+            if not self._running:
+                break
+
             self._connected = False
-            raise
+            logger.info("Starting reconnection process...")
+
+            for attempt in range(1, self.max_retries + 1):
+                if not self._running:
+                    break
+
+                delay = self.retry_delay * (2 ** (attempt - 1)) # Exponential backoff
+                logger.info(f"Reconnection attempt {attempt}/{self.max_retries} in {delay} seconds...")
+                await asyncio.sleep(delay)
+
+                try:
+                    await self._connect_mqtt()
+                    logger.info("Reconnection successful!")
+                    break # Exit retry loop on success
+                except Exception as e:
+                    logger.error(f"Reconnection attempt {attempt} failed: {e}")
+                    if attempt == self.max_retries:
+                        logger.critical("All reconnection attempts failed. Service will remain disconnected.")
+                        # Here you could add logic to stop the service or notify someone
+                        return # Stop the manager
+
+    async def _connect_mqtt(self):
+        """Handles the actual MQTT connection and subscription logic."""
+        # Clean up previous client if it exists
+        if self._client and self._connected:
+            try:
+                await self._client.__aexit__(None, None, None)
+            except Exception:
+                pass # Ignore errors during cleanup
+        self._connected = False
+
+        client_id = f"obu_processor_{self.user_no}_{int(time.time())}"
+        self._client = aiomqtt.Client(
+            hostname=self.broker_host,
+            port=self.broker_port,
+            username=self.username,
+            password=self.password,
+            keepalive=60,
+            identifier=client_id
+        )
+
+        await self._client.__aenter__()
+        self._connected = True
+
+        response_topic = f"user/{self.user_no}/+/manage/get-configs-result"
+        await self._client.subscribe(response_topic)
+        logger.info(f"🔌 MQTT Connected and subscribed to {response_topic}")
     
     async def start_processing(self):
         """Start GPS processing loop"""
         if self._running:
             logger.warning("GPS processing already running")
             return
-            
+
         self._running = True
+        await self.initialize() # Start connection manager
         self._scan_task = asyncio.create_task(self._processing_loop())
         logger.info(f"🚀 GPS processing started (scan every {self.scan_interval}s)")
-    
+
     async def stop(self):
-        """Stop GPS processing"""
+        """Stop GPS processing and clean up resources."""
         self._running = False
-        
-        # Stop scan task
+
+        # Stop all tasks
+        tasks = []
         if self._scan_task:
             self._scan_task.cancel()
-            try:
-                await self._scan_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Stop response listener
-        if self._response_listener_task:
-            self._response_listener_task.cancel()
-            try:
-                await self._response_listener_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Close MQTT connection
+            tasks.append(self._scan_task)
+        if self._connection_handler_task:
+            self._connection_handler_task.cancel()
+            tasks.append(self._connection_handler_task)
+
+        # Wait for tasks to finish cancellation
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Cleanly close MQTT connection
         if self._client and self._connected:
             try:
                 await self._client.__aexit__(None, None, None)
                 self._connected = False
-                logger.info("🔌 MQTT connection closed")
+                logger.info("🔌 MQTT connection cleanly closed")
             except Exception as e:
-                logger.error(f"Error closing MQTT: {e}")
-        
+                logger.error(f"Error during MQTT client exit: {e}")
+
         logger.info("🛑 GPS processing stopped")
     
     async def _processing_loop(self):
-        """Main processing loop - quét mỗi 15-20s"""
+        """Main processing loop. Waits for connection before starting."""
+        while not self._connected and self._running:
+            logger.info("Processing loop is waiting for MQTT connection...")
+            await asyncio.sleep(3)
+
         while self._running:
             try:
+                if not self._connected:
+                    logger.warning("MQTT disconnected. Pausing scan.")
+                    await asyncio.sleep(self.scan_interval)
+                    continue
+
                 logger.info("🔍 Scanning for active journey sessions...")
-                
-                # 1. Query active journey sessions
                 active_sessions = await self._get_active_journey_sessions()
+
                 if not active_sessions:
                     logger.info("📭 No active journey sessions found")
                 else:
                     logger.info(f"📋 Found {len(active_sessions)} active sessions")
-                    
-                    # 2. Process each session
                     await self._process_sessions(active_sessions)
-                
-                # 3. Wait for next scan
+
                 await asyncio.sleep(self.scan_interval)
-                
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"❌ Error in processing loop: {e}")
-                await asyncio.sleep(self.scan_interval)
+                logger.error(f"❌ Unhandled error in processing loop: {e}")
+                await asyncio.sleep(self.scan_interval) # Prevent rapid failure loops
     
     async def _get_active_journey_sessions(self) -> List[Dict]:
         """Query active journey sessions với device info"""
@@ -280,57 +326,40 @@ class GPSProcessor:
             logger.error(f"❌ Error requesting GPS from {device_imei}: {e}")
             return None
 
+
+
     async def _listen_responses(self):
-        """Listen for MQTT responses (background task)"""
+        """Listen for MQTT responses and forwards them to the correct future."""
         if not self._client:
             return
 
-        try:
-            async for message in self._client.messages:
-                try:
-                    # Extract session ID from topic
-                    # Topic format: user/{user_no}/{session_id}/manage/get-configs-result
-                    topic_parts = str(message.topic).split('/')
-                    if len(topic_parts) >= 3:
-                        session_id = topic_parts[2]
+        async for message in self._client.messages:
+            try:
+                topic_parts = str(message.topic).split('/')
+                if len(topic_parts) >= 3:
+                    session_id = topic_parts[2]
+                    if session_id in self._pending_requests:
+                        future = self._pending_requests.pop(session_id)
+                        if not future.done():
+                            try:
+                                payload = message.payload
+                                if isinstance(payload, bytes):
+                                    payload_str = payload.decode('utf-8')
+                                else:
+                                    payload_str = str(payload)
 
-                        # Check if we have pending request
-                        if session_id in self._pending_requests:
-                            future = self._pending_requests.pop(session_id)
+                                response_data = json.loads(payload_str)
 
-                            if not future.done():
-                                try:
-                                    # Parse MQTT response
-                                    payload = message.payload
-                                    if isinstance(payload, bytes):
-                                        payload_str = payload.decode('utf-8')
-                                    elif isinstance(payload, str):
-                                        payload_str = payload
-                                    else:
-                                        payload_str = str(payload)
+                                if 'timestap' in response_data and 'timestamp' not in response_data:
+                                    response_data['timestamp'] = response_data['timestap']
 
-                                    response_data = json.loads(payload_str)
-
-                                    # Fix typo in field name if exists (same as API service)
-                                    if 'timestap' in response_data and 'timestamp' not in response_data:
-                                        response_data['timestamp'] = response_data['timestap']
-
-                                    future.set_result(response_data)
-                                    logger.info(f"Response received for session: {session_id}")
-
-                                except Exception as e:
-                                    logger.error(f"Error parsing response for session {session_id}: {e}")
-                                    future.set_exception(Exception(f"Invalid response format: {str(e)}"))
-                        else:
-                            logger.warning(f"Received response for unknown session: {session_id}")
-
-                except Exception as e:
-                    logger.error(f"❌ Error processing MQTT response: {e}")
-
-        except asyncio.CancelledError:
-            logger.info("MQTT response listener cancelled")
-        except Exception as e:
-            logger.error(f"❌ Error in MQTT response listener: {e}")
+                                future.set_result(response_data)
+                            except Exception as e:
+                                logger.error(f"Failed to parse response for session {session_id}: {e}")
+                                if not future.done():
+                                    future.set_exception(e)
+            except Exception as e:
+                logger.error(f"Critical error in MQTT message listener: {e}")
 
     async def _save_device_log(self, journey_session_id: int, device_imei: str, mqtt_response: Dict):
         """Save GPS data to device_logs table"""
