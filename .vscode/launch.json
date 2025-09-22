@@ -12,7 +12,9 @@
             "module": "uvicorn",
             "args": [
                 "app.main:app",
-                "--reload"
+                "--reload",
+                "--port",
+                "9000"
             ],
             "jinja": true,
             "cwd": "${workspaceFolder}\\services\\api-service"

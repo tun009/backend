@@ -298,9 +298,11 @@ async def get_active_journey_sessions_with_realtime(
             end_time=journey.end_time,
             status=journey.status,
             activated_at=journey.activated_at,
+            last_update=None,  # Default to None
             plate_number=plate_number,
             driver_name=driver_name,
             imei=device_imei,
+            thumbnail_url=None,  # Default to None
             realtime={}
         )
 
@@ -323,6 +325,7 @@ async def get_active_journey_sessions_with_realtime(
                 mqtt_response, collected_at = log_row
 
                 time_diff = now - collected_at
+                session_data.last_update = collected_at
                 if time_diff.total_seconds() > 60 * 5:
                     session_data.realtime = {}
                 elif mqtt_response:

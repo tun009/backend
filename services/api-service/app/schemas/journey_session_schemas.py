@@ -83,7 +83,7 @@ class JourneySessionRealtime(BaseModel):
     end_time: Optional[datetime]
     status: Optional[str]
     activated_at: Optional[datetime]
-
+    last_update:  Optional[datetime]
     # Related data
     plate_number: Optional[str] = Field(None, description="Biển số xe")
     driver_name: Optional[str] = Field(None, description="Tên tài xế")
