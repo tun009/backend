@@ -109,7 +109,7 @@ class JourneyHistoryPoint(BaseModel):
     gps_speed: Optional[float] = None
     gps_valid: Optional[int] = None
     gps_enable: Optional[int] = None
-
+    direction: Optional[float] = None
     # Battery data
     bat_percent: Optional[int] = None
 

@@ -426,6 +426,7 @@ async def get_journey_session_history(
                 history_point.gps_speed = gps_info.get('speed')
                 history_point.gps_valid = gps_info.get('valid')
                 history_point.gps_enable = gps_info.get('enable')
+                history_point.direction = gps_info.get('direction')
 
             battery_info = mqtt_response.get('BATTERY_INFO', {})
             if battery_info:
