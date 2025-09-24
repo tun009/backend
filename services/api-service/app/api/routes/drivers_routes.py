@@ -33,10 +33,10 @@ async def create_driver(
     ):
         raise HTTPException(status_code=400, detail="Phone number already exists")
 
-    if driver_in.card_id and await crud_drivers.exists(
-        db=db, card_id=driver_in.card_id
-    ):
-        raise HTTPException(status_code=400, detail="Card ID already exists")
+    # if driver_in.card_id and await crud_drivers.exists(
+    #     db=db, card_id=driver_in.card_id
+    # ):
+    #     raise HTTPException(status_code=400, detail="Card ID already exists")
 
     return await crud_drivers.create(db=db, object=driver_in)
 
