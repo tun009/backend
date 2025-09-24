@@ -25,18 +25,18 @@ async def create_driver(
 ):
     """Create a new driver."""
     # Check duplicates using FastCRUD's exists method
-    # if await crud_drivers.exists(db=db, license_number=driver_in.license_number):
-    #     raise HTTPException(status_code=400, detail="License number already exists")
+    if await crud_drivers.exists(db=db, license_number=driver_in.license_number):
+        raise HTTPException(status_code=400, detail="License number already exists")
 
     if driver_in.phone_number and await crud_drivers.exists(
         db=db, phone_number=driver_in.phone_number
     ):
         raise HTTPException(status_code=400, detail="Phone number already exists")
 
-    # if driver_in.card_id and await crud_drivers.exists(
-    #     db=db, card_id=driver_in.card_id
-    # ):
-    #     raise HTTPException(status_code=400, detail="Card ID already exists")
+    if driver_in.card_id and await crud_drivers.exists(
+        db=db, card_id=driver_in.card_id
+    ):
+        raise HTTPException(status_code=400, detail="Card ID already exists")
 
     return await crud_drivers.create(db=db, object=driver_in)
 
