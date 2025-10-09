@@ -19,8 +19,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    networks:            
-      - obu_network        
+    networks:
+      - obu_network
   redis:
     image: redis:7-alpine
     container_name: obu_redis
@@ -49,6 +49,8 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://admin:password@db:5432/obu_service
+    volumes:
+      - ../services/api-service/alembic:/app/alembic
     networks:
       - obu_network
     restart: "no"  # Chỉ chạy một lần
