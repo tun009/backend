@@ -71,6 +71,7 @@ class JourneySessionWithDetails(BaseModel):
     driver_name: Optional[str] = Field(None, description="Tên người sử dụng")
     driver_phone_number: Optional[str] = Field(None, description="Số điện thoại người dùng")
     device_imei: Optional[str] = Field(None, description="IMEI thiết bị")
+    plate_number: Optional[str] = Field(None, description="Biển số xe")
 
     class Config:
         from_attributes = True
@@ -89,6 +90,7 @@ class JourneySessionRealtime(BaseModel):
     driver_phone_number: Optional[str] = Field(None, description="Số điện thoại người dùng")
     driver_name: Optional[str] = Field(None, description="Tên tài xế")
     imei: Optional[str] = Field(None, description="IMEI thiết bị")
+    plate_number: Optional[str] = Field(None, description="Biển số xe")
 
     thumbnail_url: Optional[str] = Field(None, description="URL ảnh thumbnail gần nhất của thiết bị")
     # Realtime data (toàn bộ mqtt_response từ device_logs)
@@ -122,6 +124,7 @@ class JourneySessionHistoryResponse(BaseModel):
     
     driver_name: Optional[str] = None
     imei: Optional[str] = None
+    plate_number: Optional[str] = None
     id: int
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None

@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .routes import authentication_routes, drivers_routes, devices_routes, journey_sessions_routes
+from .routes import authentication_routes, drivers_routes, devices_routes, journey_sessions_routes, vehicles_routes
 
 api_router = APIRouter()
 
@@ -12,3 +12,5 @@ api_router.include_router(drivers_routes.router, prefix="/drivers", tags=["Drive
 api_router.include_router(devices_routes.router, prefix="/devices", tags=["Devices"])
 
 api_router.include_router(journey_sessions_routes.router, prefix="/journey-sessions", tags=["Journey Sessions"])
+
+api_router.include_router(vehicles_routes.router, prefix="/vehicles", tags=["Vehicles"])

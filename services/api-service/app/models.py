@@ -32,6 +32,16 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+class Vehicle(Base):
+    __tablename__ = 'vehicles'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plate_number = Column(String(50), unique=True, index=True, nullable=False)
+    load_capacity_kg = Column(Integer, nullable=True)
+    type = Column(String(50), nullable=True) # e.g., "Xe tải", "Xe bán tải"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    device = relationship('Device', back_populates='vehicle', uselist=False)
+
 class Device(Base):
     __tablename__ = "devices"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -39,6 +49,9 @@ class Device(Base):
     serial_number = Column(String(50))
     firmware_version = Column(String(20))
     installed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    vehicle_id = Column(UUID(as_uuid=True), ForeignKey('vehicles.id'), nullable=True)
+    vehicle = relationship('Vehicle', back_populates='device')
 
     # Relationships mới
     journey_sessions = relationship("JourneySession", back_populates="device")

@@ -10,14 +10,15 @@ class DeviceCreate(BaseModel):
     imei: str = Field(..., max_length=50)
     serial_number: Optional[str] = Field(None, max_length=50)
     firmware_version: Optional[str] = Field(None, max_length=20)
-    
+
 
 class DeviceUpdate(BaseModel):
     """Schema for updating a Device."""
     imei: Optional[str] = None
     serial_number: Optional[str] = None
     firmware_version: Optional[str] = None
-    
+    vehicle_id: Optional[uuid.UUID] = None
+
 
 class DeviceRead(BaseModel):
     """Schema for reading Device data."""
@@ -25,8 +26,10 @@ class DeviceRead(BaseModel):
     imei: str
     serial_number: Optional[str]
     firmware_version: Optional[str]
-    
+
     installed_at: datetime
+    vehicle_id: Optional[uuid.UUID] = None
+    plate_number: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -162,3 +165,8 @@ class DeviceRealtimeResponse(BaseModel):
 class DeviceReadWithRealtime(DeviceRead):
     """Schema for reading Device data with realtime info."""
     realtime: dict = Field({}, description="Realtime data from the device")
+
+
+class DeviceAssignment(BaseModel):
+    """Schema for assigning a device to a vehicle."""
+    vehicle_id: Optional[uuid.UUID] = None

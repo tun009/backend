@@ -33,10 +33,28 @@ async def create_device(
     # Check duplicate IMEI using FastCRUD's exists method
     if await crud_devices.exists(db=db, imei=device_in.imei):
         raise HTTPException(status_code=400, detail="Device no đã tồn tại trong hệ thống")
-    
+
     # Vehicle logic removed - devices now contain vehicle info directly
-    
+
     return await crud_devices.create(db=db, object=device_in)
+
+@router.get("/unassigned", response_model=list[schemas.device_schemas.DeviceRead])
+async def get_unassigned_devices(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Get all devices that are not assigned to any vehicle."""
+    stmt = (
+        select(Device)
+        .where(Device.vehicle_id.is_(None))
+        .order_by(Device.installed_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    devices = result.scalars().all()
+
+    return [schemas.device_schemas.DeviceRead.model_validate(device) for device in devices]
+
 
 @router.get("/{device_id}", response_model=schemas.device_schemas.DeviceRead)
 async def get_device(
@@ -50,6 +68,8 @@ async def get_device(
         raise HTTPException(status_code=404, detail="Device not found")
     return device
 
+from app.models import Vehicle
+
 @router.get("/", response_model=PaginatedListResponse[schemas.device_schemas.DeviceReadWithRealtime])
 async def get_devices(
     db: Annotated[AsyncSession, Depends(get_async_db)],
@@ -60,11 +80,12 @@ async def get_devices(
     search: Optional[str] = None,
     include_realtime: bool = True
 ):
-    """Get devices with pagination and search."""
+    """Get devices with pagination and search, including vehicle info."""
 
-    # Build query for devices only (vehicle info now in device table)
+    # Build query with an outer join to include vehicle info
     stmt = (
-        select(Device)
+        select(Device, Vehicle.plate_number)
+        .outerjoin(Vehicle, Device.vehicle_id == Vehicle.id)
         .order_by(Device.installed_at.desc())
     )
 
@@ -72,60 +93,33 @@ async def get_devices(
     if search:
         stmt = stmt.where(Device.imei.icontains(search))
 
+    # Get total count for pagination
+    count_stmt = select(func.count()).select_from(stmt.alias())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
     # Apply pagination
     offset = compute_offset(page, items_per_page)
     stmt = stmt.offset(offset).limit(items_per_page)
 
     result = await db.execute(stmt)
-    rows = result.scalars().all()
+    rows = result.all()
 
     # Transform to response schema
     devices_with_details = []
-    for device in rows:
-        # Convert SQLAlchemy model to Pydantic schema
-        device_dict = {
-            "id": device.id,
-            "imei": device.imei,
-            "serial_number": device.serial_number,
-            "firmware_version": device.firmware_version,
-            "installed_at": device.installed_at,
-            
-            "realtime": {}
-        }
-        device_data = schemas.device_schemas.DeviceReadWithRealtime.model_validate(device_dict)
+    for device, plate_number in rows:
+        device_data = schemas.device_schemas.DeviceReadWithRealtime(
+            **device.__dict__,
+            plate_number=plate_number,
+            realtime={}
+        )
         devices_with_details.append(device_data)
 
-    # Get total count for pagination
-    count_stmt = select(func.count(Device.id))
-    if search:
-        count_stmt = count_stmt.where(Device.imei.icontains(search))
-
-    total_result = await db.execute(count_stmt)
-    total = total_result.scalar()
-
-    # # Handle realtime data if needed
-    # if include_realtime and devices_with_details:
-    #     device_imeis = [device.imei for device in devices_with_details]
-
-    #     try:
-    #         realtime_data = await mqtt_service.get_multiple_devices_realtime_info(device_imeis, max_concurrent=3)
-    #     except Exception as e:
-    #         logger.warning(f"Failed to fetch realtime data: {e}")
-    #         realtime_data = {}
-
-    #     # Add realtime data to devices
-    #     for device in devices_with_details:
-    #         realtime_response = realtime_data.get(device.imei)
-    #         if realtime_response and hasattr(realtime_response, 'data'):
-    #             device.realtime = realtime_response.data.model_dump()
+    # Handle realtime data (optional)
+    # This part can be re-enabled if needed
 
     # Return paginated response
-    fake_crud_data = {
-        "data": devices_with_details,
-        "total_count": total or 0
-    }
-
-    return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
+    return paginated_response(crud_data={"data": devices_with_details, "total_count": total}, page=page, items_per_page=items_per_page)
 
 @router.patch("/{device_id}", response_model=schemas.device_schemas.DeviceRead)
 async def update_device(
@@ -160,7 +154,7 @@ async def delete_device(
     """Delete device."""
     if not await crud_devices.exists(db=db, id=device_id):
         raise HTTPException(status_code=404, detail="Device not found")
-    
+
     await crud_devices.delete(db=db, id=device_id)
 
 # Removed unassigned devices endpoint - no longer relevant without vehicle concept
@@ -187,35 +181,49 @@ async def get_device_realtime_info(
         raise HTTPException(status_code=500, detail="Không tìm thấy IMEI của thiết bị")
 
     # 3. Gọi MQTT để lấy thông tin real-time
-    try:
-        realtime_response = await mqtt_service.get_device_realtime_info(device_imei)
 
-        if not realtime_response:
-            raise HTTPException(
-                status_code=408,
-                detail="Thiết bị không phản hồi. Vui lòng kiểm tra kết nối thiết bị."
-            )
 
-        # Chỉ trả về data object, bỏ metadata
-        return realtime_response.data.model_dump()
 
-    except DeviceTimeoutError as e:
-        raise HTTPException(
-            status_code=408,
-            detail=f"Thiết bị không phản hồi: {str(e)}"
-        )
-    except MQTTConnectionError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Lỗi kết nối MQTT: {str(e)}"
-        )
-    except InvalidResponseError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Dữ liệu từ thiết bị không hợp lệ: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi không xác định: {str(e)}"
-        )
+# Device assignment endpoints
+
+@router.put("/{device_id}/assign", response_model=schemas.device_schemas.DeviceRead)
+async def assign_device_to_vehicle(
+    device_id: uuid.UUID,
+    assignment_data: schemas.device_schemas.DeviceAssignment,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Assign device to a vehicle."""
+    from app.data_access.vehicle_repository import crud_vehicles
+
+    if not await crud_devices.exists(db=db, id=device_id):
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if assignment_data.vehicle_id:
+        if not await crud_vehicles.exists(db=db, id=assignment_data.vehicle_id):
+            raise HTTPException(status_code=400, detail="Vehicle not found")
+
+        existing_device = await crud_devices.get(db=db, vehicle_id=assignment_data.vehicle_id)
+        if existing_device and existing_device["id"] != device_id:
+            raise HTTPException(status_code=400, detail="Vehicle already has a device assigned")
+
+    update_data = schemas.device_schemas.DeviceUpdate(vehicle_id=assignment_data.vehicle_id)
+    await crud_devices.update(db=db, object=update_data, id=device_id)
+
+    return await crud_devices.get(db=db, id=device_id, schema_to_select=schemas.device_schemas.DeviceRead)
+
+@router.put("/{device_id}/unassign", response_model=schemas.device_schemas.DeviceRead)
+async def unassign_device_from_vehicle(
+    device_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Unassign device from vehicle."""
+    if not await crud_devices.exists(db=db, id=device_id):
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    unassign_data = schemas.device_schemas.DeviceUpdate(vehicle_id=None)
+    await crud_devices.update(db=db, object=unassign_data, id=device_id)
+
+    return await crud_devices.get(db=db, id=device_id, schema_to_select=schemas.device_schemas.DeviceRead)
+

@@ -1,0 +1,132 @@
+import uuid
+from typing import Annotated, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastcrud.paginated import PaginatedListResponse, paginated_response, compute_offset
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, not_, func
+
+from app import schemas
+from app.api import dependencies
+from app.db.session import get_async_db
+from app.data_access.vehicle_repository import crud_vehicles
+from app.models import Vehicle, Device
+
+router = APIRouter()
+
+@router.post("/", response_model=schemas.vehicle_schemas.VehicleRead, status_code=status.HTTP_201_CREATED)
+async def create_vehicle(
+    vehicle_in: schemas.vehicle_schemas.VehicleCreate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Create a new vehicle."""
+    if await crud_vehicles.exists(db=db, plate_number=vehicle_in.plate_number):
+        raise HTTPException(status_code=400, detail="Plate number already exists")
+
+    return await crud_vehicles.create(db=db, object=vehicle_in)
+
+@router.get("/unassigned", response_model=list[schemas.vehicle_schemas.VehicleRead])
+async def get_unassigned_vehicles(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Get all vehicles that don't have any device assigned."""
+    stmt = (
+        select(Vehicle)
+        .where(
+            not_(
+                Vehicle.id.in_(
+                    select(Device.vehicle_id).where(Device.vehicle_id.is_not(None))
+                )
+            )
+        )
+        .order_by(Vehicle.created_at.desc())
+    )
+
+    result = await db.execute(stmt)
+    vehicles = result.scalars().all()
+
+    return [schemas.vehicle_schemas.VehicleRead.model_validate(vehicle) for vehicle in vehicles]
+
+@router.get("/", response_model=PaginatedListResponse[schemas.vehicle_schemas.VehicleRead])
+async def get_vehicles(
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    page: int = 1,
+    items_per_page: int = 10,
+    search: Optional[str] = None
+):
+    """Get vehicles with pagination and search."""
+
+    # Base query
+    base_query = select(Vehicle).order_by(Vehicle.created_at.desc())
+
+    # Search filter
+    if search:
+        base_query = base_query.where(Vehicle.plate_number.icontains(search))
+
+    # Get total count
+    count_stmt = select(func.count()).select_from(base_query.alias())
+    total_result = await db.execute(count_stmt)
+    total_count = total_result.scalar() or 0
+
+    # Get paginated data
+    offset = compute_offset(page, items_per_page)
+    data_stmt = base_query.offset(offset).limit(items_per_page)
+    data_result = await db.execute(data_stmt)
+    data = data_result.scalars().all()
+
+    # Construct paginated response
+    return paginated_response(
+        crud_data={'data': data, 'total_count': total_count},
+        page=page,
+        items_per_page=items_per_page
+    )
+
+@router.get("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleRead)
+async def get_vehicle(
+    vehicle_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Get vehicle by ID."""
+    vehicle = await crud_vehicles.get(db=db, id=vehicle_id, schema_to_select=schemas.vehicle_schemas.VehicleRead)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+    return vehicle
+
+
+
+@router.patch("/{vehicle_id}", response_model=schemas.vehicle_schemas.VehicleRead)
+async def update_vehicle(
+    vehicle_id: uuid.UUID,
+    vehicle_update: schemas.vehicle_schemas.VehicleUpdate,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Update vehicle (partial update)."""
+    if not await crud_vehicles.exists(db=db, id=vehicle_id):
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    await crud_vehicles.update(db=db, object=vehicle_update, id=vehicle_id)
+
+    updated_vehicle = await crud_vehicles.get(
+        db=db,
+        id=vehicle_id,
+        schema_to_select=schemas.vehicle_schemas.VehicleRead
+    )
+    return updated_vehicle
+
+@router.delete("/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vehicle(
+    vehicle_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+):
+    """Delete vehicle."""
+    if not await crud_vehicles.exists(db=db, id=vehicle_id):
+        raise HTTPException(status_code=404, detail="Vehicle not found")
+
+    await crud_vehicles.delete(db=db, id=vehicle_id)
+

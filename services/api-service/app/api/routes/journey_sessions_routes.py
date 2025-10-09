@@ -14,7 +14,7 @@ from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
 from app.data_access import crud_journey_sessions, crud_drivers, crud_devices
-from app.models import JourneySession, Driver, Device, DeviceLog
+from app.models import JourneySession, Driver, Device, DeviceLog, Vehicle
 
 from app.core.redis_client import redis_client
 from app.services.media_server_service import media_server_service
@@ -129,9 +129,10 @@ async def get_journey_sessions(
 
     # Base query for joins
     base_query = (
-        select(JourneySession, Driver, Device)
+        select(JourneySession, Driver, Device, Vehicle.plate_number)
         .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
+        .join(Vehicle, Device.vehicle_id == Vehicle.id, isouter=True)
     )
 
     # Build where clauses dynamically
@@ -144,7 +145,8 @@ async def get_journey_sessions(
             or_(
                 Device.imei.icontains(search),
                 Driver.full_name.icontains(search),
-                Driver.phone_number.icontains(search)
+                Driver.phone_number.icontains(search),
+                Vehicle.plate_number.icontains(search)
             )
         )
 
@@ -164,6 +166,7 @@ async def get_journey_sessions(
         select(func.count(distinct(JourneySession.id)))
         .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
+        .join(Vehicle, Device.vehicle_id == Vehicle.id, isouter=True)
     )
     if where_clauses:
         count_query = count_query.where(and_(*where_clauses))
@@ -186,7 +189,7 @@ async def get_journey_sessions(
     # Transform to response schema
     journey_sessions = []
     for row in rows:
-        journey, driver, device = row
+        journey, driver, device, plate_number = row
         session_data = schemas.journey_session_schemas.JourneySessionWithDetails(
             id=journey.id,
             device_id=journey.device_id,
@@ -199,7 +202,8 @@ async def get_journey_sessions(
             activated_at=journey.activated_at,
             driver_name=driver.full_name,
             driver_phone_number=driver.phone_number,
-            device_imei=device.imei
+            device_imei=device.imei,
+            plate_number=plate_number
         )
         journey_sessions.append(session_data)
 
@@ -271,10 +275,12 @@ async def get_active_journey_sessions_with_realtime(
         select(
             JourneySession,
             Driver,
-            Device.imei
+            Device.imei,
+            Vehicle.plate_number
         )
         .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
+        .join(Vehicle, Device.vehicle_id == Vehicle.id, isouter=True)
         .where(
             and_(
                 JourneySession.status == 'active',
@@ -311,7 +317,7 @@ async def get_active_journey_sessions_with_realtime(
     sessions_with_realtime = []
 
     for row in rows:
-        journey, driver, device_imei = row
+        journey, driver, device_imei, plate_number = row
 
         # Initialize session data
         session_data = schemas.journey_session_schemas.JourneySessionRealtime(
@@ -326,6 +332,7 @@ async def get_active_journey_sessions_with_realtime(
             driver_phone_number=driver.phone_number,
             driver_name=driver.full_name,
             imei=device_imei,
+            plate_number=plate_number,
             thumbnail_url=None,  # Default to None
             realtime={}
         )
@@ -402,10 +409,12 @@ async def get_journey_session_history(
         select(
             JourneySession.id,
             Driver.full_name,
-            Device.imei
+            Device.imei,
+            Vehicle.plate_number
         )
         .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
+        .join(Vehicle, Device.vehicle_id == Vehicle.id, isouter=True)
         .where(JourneySession.id == session_id)
     )
 
@@ -415,7 +424,7 @@ async def get_journey_session_history(
     if not journey_row:
         raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
 
-    journey_id, driver_name, device_imei = journey_row
+    journey_id, driver_name, device_imei, plate_number = journey_row
 
     # Build logs query with optional time filters
     logs_stmt = (
@@ -476,6 +485,7 @@ async def get_journey_session_history(
         data=history_points,
         driver_name=driver_name,
         imei=device_imei,
+        plate_number=plate_number,
         id=journey_id,
         start_time=start_time,
         end_time=end_time
