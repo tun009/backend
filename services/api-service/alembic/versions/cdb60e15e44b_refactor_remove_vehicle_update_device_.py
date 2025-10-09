@@ -63,7 +63,10 @@ def upgrade() -> None:
         WHERE d.vehicle_id = alerts.vehicle_id;
     """)
 
-    # Phase 3: Add NOT NULL constraints
+    # Phase 3: Clean up orphaned records and add NOT NULL constraints
+    op.execute('DELETE FROM journey_sessions WHERE device_id IS NULL')
+    op.execute('DELETE FROM images WHERE device_id IS NULL')
+    op.execute('DELETE FROM alerts WHERE device_id IS NULL')
     op.alter_column('journey_sessions', 'device_id', nullable=False)
     op.alter_column('images', 'device_id', nullable=False)
     op.alter_column('alerts', 'device_id', nullable=False)
