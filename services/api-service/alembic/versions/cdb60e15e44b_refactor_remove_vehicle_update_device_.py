@@ -64,6 +64,10 @@ def upgrade() -> None:
     """)
 
     # Phase 3: Clean up orphaned records and add NOT NULL constraints
+    op.execute('''
+        DELETE FROM device_logs
+        WHERE journey_session_id IN (SELECT id FROM journey_sessions WHERE device_id IS NULL)
+    ''')
     op.execute('DELETE FROM journey_sessions WHERE device_id IS NULL')
     op.execute('DELETE FROM images WHERE device_id IS NULL')
     op.execute('DELETE FROM alerts WHERE device_id IS NULL')
