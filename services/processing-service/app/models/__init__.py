@@ -24,7 +24,7 @@ Base = declarative_base()
 class JourneySession(Base):
     __tablename__ = "journey_sessions"
     id = Column(BigInteger, primary_key=True)
-    vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=False)
+    device_id = Column(UUID(as_uuid=True), ForeignKey("devices.id"), nullable=False)
     driver_id = Column(UUID(as_uuid=True), ForeignKey("drivers.id"), nullable=False)
     start_time = Column(DateTime(timezone=True), nullable=False)
     end_time = Column(DateTime(timezone=True), nullable=False)
@@ -44,25 +44,19 @@ class DeviceLog(Base):
 class Device(Base):
     __tablename__ = "devices"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    vehicle_id = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), unique=True)
     imei = Column(String(50), unique=True, nullable=False, index=True)
     serial_number = Column(String(50), unique=True)
     firmware_version = Column(String(20))
     installed_at = Column(DateTime(timezone=True), server_default=func.now())
 
-class Vehicle(Base):
-    __tablename__ = "vehicles"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    plate_number = Column(String(20), unique=True, index=True, nullable=False)
-    type = Column(String(50))
-    load_capacity_kg = Column(Integer)
-    registration_expiry = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Thêm thông tin mô tả thiết bị
+    device_name = Column(String(100))
+    device_type = Column(String(50))
+    description = Column(Text)
 
 __all__ = [
     "Base",
     "JourneySession",
     "DeviceLog",
-    "Device",
-    "Vehicle"
+    "Device"
 ]

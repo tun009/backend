@@ -1,4 +1,5 @@
-import uuid
+
+from lib2to3.pgen2 import driver
 import logging
 from typing import Annotated, Optional
 from datetime import datetime, timezone, timedelta
@@ -7,13 +8,13 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, update, func
+from sqlalchemy import distinct, select, and_, or_, update, func
 
 from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
-from app.data_access import crud_journey_sessions, crud_vehicles, crud_drivers, crud_devices, crud_device_logs
-from app.models import JourneySession, Vehicle, Driver, Device, DeviceLog
+from app.data_access import crud_journey_sessions, crud_drivers, crud_devices
+from app.models import JourneySession, Driver, Device, DeviceLog
 
 from app.core.redis_client import redis_client
 from app.services.media_server_service import media_server_service
@@ -31,19 +32,19 @@ async def create_journey_session(
 ):
     """Tạo ca làm việc mới."""
 
-    # 1. Kiểm tra vehicle tồn tại
-    if not await crud_vehicles.exists(db=db, id=journey_in.vehicle_id):
-        raise HTTPException(status_code=404, detail="Xe không tồn tại")
+    # 1. Kiểm tra device tồn tại
+    if not await crud_devices.exists(db=db, id=journey_in.device_id):
+        raise HTTPException(status_code=404, detail="Thiết bị không tồn tại")
 
     # 2. Kiểm tra driver tồn tại
     if not await crud_drivers.exists(db=db, id=journey_in.driver_id):
-        raise HTTPException(status_code=404, detail="Tài xế không tồn tại")
+        raise HTTPException(status_code=404, detail="Người dùng không tồn tại")
 
-    # 3. Kiểm tra xe đã có ca làm việc active chưa
+    # 3. Kiểm tra thiết bị đã có ca làm việc active chưa
     existing_active = await db.execute(
         select(JourneySession).where(
             and_(
-                JourneySession.vehicle_id == journey_in.vehicle_id,
+                JourneySession.device_id == journey_in.device_id,
                 JourneySession.status == 'active',
                 JourneySession.end_time.is_(None)
             )
@@ -52,10 +53,10 @@ async def create_journey_session(
     if existing_active.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="Xe này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
+            detail="Thiết bị này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
         )
 
-    # 4. Kiểm tra tài xế đã có ca làm việc active chưa
+    # 4. Kiểm tra Người dùng đã có ca làm việc active chưa
     existing_driver_active = await db.execute(
         select(JourneySession).where(
             and_(
@@ -67,14 +68,14 @@ async def create_journey_session(
     if existing_driver_active.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="Tài xế này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
+            detail="Người dùng này đã có ca làm việc đang hoạt động. Vui lòng kết thúc ca hiện tại trước."
         )
 
-    # 5. Kiểm tra trùng lịch cho xe (overlap checking)
-    existing_vehicle_overlap = await db.execute(
+    # 5. Kiểm tra trùng lịch cho thiết bị (overlap checking)
+    existing_device_overlap = await db.execute(
         select(JourneySession).where(
             and_(
-                JourneySession.vehicle_id == journey_in.vehicle_id,
+                JourneySession.device_id == journey_in.device_id,
                 JourneySession.status.in_(['pending', 'active']),
                 # Check overlap: new_start < existing_end AND new_end > existing_start
                 and_(
@@ -84,13 +85,13 @@ async def create_journey_session(
             )
         )
     )
-    if existing_vehicle_overlap.scalar_one_or_none():
+    if existing_device_overlap.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="Xe này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
+            detail="Thiết bị này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
         )
 
-    # 6. Kiểm tra trùng lịch cho tài xế (overlap checking)
+    # 6. Kiểm tra trùng lịch cho Người dùng (overlap checking)
     existing_driver_overlap = await db.execute(
         select(JourneySession).where(
             and_(
@@ -107,7 +108,7 @@ async def create_journey_session(
     if existing_driver_overlap.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
-            detail="Tài xế này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
+            detail="Người dùng này đã có ca làm việc trong khoảng thời gian trùng lặp. Vui lòng chọn thời gian khác."
         )
 
     # 7. Tạo journey session với status='pending'
@@ -119,31 +120,65 @@ async def get_journey_sessions(
     _current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
     page: int = 1,
     items_per_page: int = 10,
-    status_filter: Optional[str] = None
+    status_filter: Optional[str] = None,
+    search: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
 ):
-    """Lấy danh sách ca làm việc với pagination và thông tin chi tiết."""
+    """Lấy danh sách ca làm việc với pagination và các bộ lọc chi tiết."""
 
-    # Build query với joins để lấy thông tin chi tiết
-    stmt = (
-        select(
-            JourneySession,
-            Vehicle.plate_number,
-            Driver.full_name,
-            Device.imei
-        )
-        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+    # Base query for joins
+    base_query = (
+        select(JourneySession, Driver, Device)
+        .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
-        .order_by(JourneySession.start_time.desc())
     )
 
-    # Apply status filter if provided
+    # Build where clauses dynamically
+    where_clauses = []
     if status_filter:
-        stmt = stmt.where(JourneySession.status == status_filter)
+        where_clauses.append(JourneySession.status == status_filter)
 
-    # Apply pagination
-    offset = compute_offset(page, items_per_page)
-    stmt = stmt.offset(offset).limit(items_per_page)
+    if search:
+        where_clauses.append(
+            or_(
+                Device.imei.icontains(search),
+                Driver.full_name.icontains(search),
+                Driver.phone_number.icontains(search)
+            )
+        )
+
+    if start_date and end_date:
+        where_clauses.append(JourneySession.start_time <= end_date)
+        where_clauses.append(JourneySession.end_time >= start_date)
+    elif start_date:
+        where_clauses.append(JourneySession.end_time >= start_date)
+    elif end_date:
+        where_clauses.append(JourneySession.start_time <= end_date)
+
+    if where_clauses:
+        base_query = base_query.where(and_(*where_clauses))
+
+    # Get total count for pagination, ensuring distinct count
+    count_query = (
+        select(func.count(distinct(JourneySession.id)))
+        .join(Device, JourneySession.device_id == Device.id)
+        .join(Driver, JourneySession.driver_id == Driver.id)
+    )
+    if where_clauses:
+        count_query = count_query.where(and_(*where_clauses))
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Main query to fetch distinct data
+    stmt = (
+        base_query
+        .distinct()
+        .order_by(JourneySession.start_time.desc())
+        .offset(compute_offset(page, items_per_page))
+        .limit(items_per_page)
+    )
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -151,10 +186,10 @@ async def get_journey_sessions(
     # Transform to response schema
     journey_sessions = []
     for row in rows:
-        journey, plate_number, driver_name, device_imei = row
+        journey, driver, device = row
         session_data = schemas.journey_session_schemas.JourneySessionWithDetails(
             id=journey.id,
-            vehicle_id=journey.vehicle_id,
+            device_id=journey.device_id,
             driver_id=journey.driver_id,
             start_time=journey.start_time,
             end_time=journey.end_time,
@@ -162,24 +197,16 @@ async def get_journey_sessions(
             notes=journey.notes,
             status=journey.status,
             activated_at=journey.activated_at,
-            vehicle_plate_number=plate_number,
-            driver_name=driver_name,
-            device_imei=device_imei
+            driver_name=driver.full_name,
+            driver_phone_number=driver.phone_number,
+            device_imei=device.imei
         )
         journey_sessions.append(session_data)
 
-    # Get total count for pagination
-    count_stmt = select(func.count(JourneySession.id))
-    if status_filter:
-        count_stmt = count_stmt.where(JourneySession.status == status_filter)
-
-    total_result = await db.execute(count_stmt)
-    total = total_result.scalar()
-
-    # Tạo fake crud_data format để dùng với paginated_response()
+    # Create fake crud_data format for paginated_response()
     fake_crud_data = {
         "data": journey_sessions,
-        "total_count": total or 0
+        "total_count": total
     }
 
     return paginated_response(crud_data=fake_crud_data, page=page, items_per_page=items_per_page)
@@ -195,13 +222,11 @@ async def get_active_journey_sessions(
     stmt = (
         select(
             JourneySession,
-            Vehicle.plate_number,
             Driver.full_name,
             Device.imei
         )
-        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
         .where(JourneySession.status == 'active')
         .order_by(JourneySession.activated_at.desc())
     )
@@ -212,10 +237,10 @@ async def get_active_journey_sessions(
     # Transform to response schema
     active_sessions = []
     for row in rows:
-        journey, plate_number, driver_name, device_imei = row
+        journey, driver_name, device_imei, driver = row
         session_data = schemas.journey_session_schemas.JourneySessionWithDetails(
             id=journey.id,
-            vehicle_id=journey.vehicle_id,
+            device_id=journey.device_id,
             driver_id=journey.driver_id,
             start_time=journey.start_time,
             end_time=journey.end_time,
@@ -223,8 +248,8 @@ async def get_active_journey_sessions(
             notes=journey.notes,
             status=journey.status,
             activated_at=journey.activated_at,
-            vehicle_plate_number=plate_number,
-            driver_name=driver_name,
+            driver_name= driver.driver_name,
+            driver_phone_number=driver.phone_number,
             device_imei=device_imei
         )
         active_sessions.append(session_data)
@@ -245,13 +270,11 @@ async def get_active_journey_sessions_with_realtime(
     stmt = (
         select(
             JourneySession,
-            Vehicle.plate_number,
-            Driver.full_name,
+            Driver,
             Device.imei
         )
-        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
         .where(
             and_(
                 JourneySession.status == 'active',
@@ -279,6 +302,7 @@ async def get_active_journey_sessions_with_realtime(
                 JourneySession.end_time >= now
             )
         )
+        
     )
     total_result = await db.execute(count_stmt)
     total = total_result.scalar()
@@ -287,20 +311,20 @@ async def get_active_journey_sessions_with_realtime(
     sessions_with_realtime = []
 
     for row in rows:
-        journey, plate_number, driver_name, device_imei = row
+        journey, driver, device_imei = row
 
         # Initialize session data
         session_data = schemas.journey_session_schemas.JourneySessionRealtime(
             id=journey.id,
-            vehicle_id=journey.vehicle_id,
+            device_id=journey.device_id,
             driver_id=journey.driver_id,
             start_time=journey.start_time,
             end_time=journey.end_time,
             status=journey.status,
             activated_at=journey.activated_at,
             last_update=None,  # Default to None
-            plate_number=plate_number,
-            driver_name=driver_name,
+            driver_phone_number=driver.phone_number,
+            driver_name=driver.full_name,
             imei=device_imei,
             thumbnail_url=None,  # Default to None
             realtime={}
@@ -368,20 +392,20 @@ async def get_active_journey_sessions_with_realtime(
 async def get_journey_session_history(
     session_id: int,
     db: Annotated[AsyncSession, Depends(get_async_db)],
-    _current_user: Annotated[dict, Depends(dependencies.get_current_active_user)]
+    _current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None
 ):
-    """Lấy lịch sử hành trình của ca làm việc theo session_id."""
+    """Lấy lịch sử hành trình của ca làm việc theo session_id, có thể lọc theo thời gian."""
 
     journey_stmt = (
         select(
             JourneySession.id,
-            Vehicle.plate_number,
             Driver.full_name,
             Device.imei
         )
-        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
         .where(JourneySession.id == session_id)
     )
 
@@ -391,8 +415,9 @@ async def get_journey_session_history(
     if not journey_row:
         raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
 
-    journey_id, plate_number, driver_name, device_imei = journey_row
+    journey_id, driver_name, device_imei = journey_row
 
+    # Build logs query with optional time filters
     logs_stmt = (
         select(
             DeviceLog.id,
@@ -400,8 +425,14 @@ async def get_journey_session_history(
             DeviceLog.mqtt_response
         )
         .where(DeviceLog.journey_session_id == session_id)
-        .order_by(DeviceLog.collected_at.asc())  # Sắp xếp theo thời gian tăng dần
     )
+
+    if start_time:
+        logs_stmt = logs_stmt.where(DeviceLog.collected_at >= start_time)
+    if end_time:
+        logs_stmt = logs_stmt.where(DeviceLog.collected_at <= end_time)
+
+    logs_stmt = logs_stmt.order_by(DeviceLog.collected_at.asc())  # Sắp xếp theo thời gian tăng dần
 
     logs_result = await db.execute(logs_stmt)
     log_rows = logs_result.all()
@@ -443,7 +474,6 @@ async def get_journey_session_history(
 
     response = schemas.journey_session_schemas.JourneySessionHistoryResponse(
         data=history_points,
-        plate_number=plate_number,
         driver_name=driver_name,
         imei=device_imei,
         id=journey_id,
@@ -465,13 +495,11 @@ async def get_journey_session(
     stmt = (
         select(
             JourneySession,
-            Vehicle.plate_number,
             Driver.full_name,
             Device.imei
         )
-        .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
+        .join(Device, JourneySession.device_id == Device.id)
         .join(Driver, JourneySession.driver_id == Driver.id)
-        .outerjoin(Device, Vehicle.id == Device.vehicle_id)
         .where(JourneySession.id == session_id)
     )
 
@@ -481,11 +509,11 @@ async def get_journey_session(
     if not row:
         raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
 
-    journey, plate_number, driver_name, device_imei = row
+    journey, driver, device_imei = row
 
     return schemas.journey_session_schemas.JourneySessionWithDetails(
         id=journey.id,
-        vehicle_id=journey.vehicle_id,
+        device_id=journey.device_id,
         driver_id=journey.driver_id,
         start_time=journey.start_time,
         end_time=journey.end_time,
@@ -493,8 +521,8 @@ async def get_journey_session(
         notes=journey.notes,
         status=journey.status,
         activated_at=journey.activated_at,
-        vehicle_plate_number=plate_number,
-        driver_name=driver_name,
+        driver_name=driver.driver_name,
+        driver_phone_number=driver.phone_number,
         device_imei=device_imei
     )
 
@@ -683,32 +711,44 @@ async def get_journey_playlist(
     session_id: int,
     db: Annotated[AsyncSession, Depends(get_async_db)],
     _current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
 ):
     """
     Returns a JSON-based playlist for a journey, intended for a client-side player.
     The player is responsible for handling playback, seeking, and transitions.
     """
     # 1. Get device IMEI from journey_id
-    journey_stmt = select(Device.imei).select_from(JourneySession).join(Vehicle, JourneySession.vehicle_id == Vehicle.id).join(Device, Vehicle.id == Device.vehicle_id).where(JourneySession.id == session_id)
+    journey_stmt = select(Device.imei).select_from(JourneySession).join(Device, JourneySession.device_id == Device.id).where(JourneySession.id == session_id)
     device_imei_result = await db.execute(journey_stmt)
     device_no = device_imei_result.scalar_one_or_none()
     if not device_no:
         raise HTTPException(status_code=404, detail="Device not found for the given journey.")
 
-    # 2. Get time range from journey_id
-    time_stmt = select(func.min(DeviceLog.collected_at).label("start_time"), func.max(DeviceLog.collected_at).label("end_time")).where(DeviceLog.journey_session_id == session_id)
-    time_result = await db.execute(time_stmt)
-    time_row = time_result.first()
-    if not time_row or not time_row.start_time:
-        raise HTTPException(status_code=404, detail="No device logs found for this journey to determine time range.")
-
     vietnam_tz = timezone(timedelta(hours=7))
-    start_time_utc = time_row.start_time.replace(tzinfo=timezone.utc)
-    end_time_utc = time_row.end_time.replace(tzinfo=timezone.utc)
-    start_time_vn = start_time_utc.astimezone(vietnam_tz)
-    end_time_vn = end_time_utc.astimezone(vietnam_tz)
-    start_time_iso = start_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-    end_time_iso = end_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    start_time_iso: str
+    end_time_iso: str
+
+    if start_time and end_time:
+        # Use provided time range
+        start_time_vn = start_time.astimezone(vietnam_tz)
+        end_time_vn = end_time.astimezone(vietnam_tz)
+        start_time_iso = start_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        end_time_iso = end_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    else:
+        # Fallback: Get time range from device logs
+        time_stmt = select(func.min(DeviceLog.collected_at).label("start_time"), func.max(DeviceLog.collected_at).label("end_time")).where(DeviceLog.journey_session_id == session_id)
+        time_result = await db.execute(time_stmt)
+        time_row = time_result.first()
+        if not time_row or not time_row.start_time:
+            raise HTTPException(status_code=404, detail="No device logs found for this journey to determine time range.")
+
+        start_time_utc = time_row.start_time.replace(tzinfo=timezone.utc)
+        end_time_utc = time_row.end_time.replace(tzinfo=timezone.utc)
+        start_time_vn = start_time_utc.astimezone(vietnam_tz)
+        end_time_vn = end_time_utc.astimezone(vietnam_tz)
+        start_time_iso = start_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        end_time_iso = end_time_vn.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
     # 3. Get video files list from Media Server
     try:

@@ -10,7 +10,7 @@ from sqlalchemy import select, and_
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
-from app.models import JourneySession, DeviceLog, Device, Vehicle
+from app.models import JourneySession, DeviceLog, Device
 
 logger = logging.getLogger(__name__)
 
@@ -207,14 +207,13 @@ class GPSProcessor:
                 stmt = (
                     select(
                         JourneySession.id,
-                        JourneySession.vehicle_id,
+                        JourneySession.device_id,
                         JourneySession.start_time,
                         JourneySession.end_time,
                         Device.imei.label('device_imei'),
-                        Vehicle.plate_number
+                        Device.device_name
                     )
-                    .join(Vehicle, JourneySession.vehicle_id == Vehicle.id)
-                    .join(Device, Vehicle.id == Device.vehicle_id)
+                    .join(Device, JourneySession.device_id == Device.id)
                     .where(
                         and_(
                             JourneySession.status == 'active',
@@ -223,15 +222,15 @@ class GPSProcessor:
                         )
                     )
                 )
-                
+
                 result = await session.execute(stmt)
                 sessions = []
                 for row in result:
                     sessions.append({
                         'id': row.id,
-                        'vehicle_id': row.vehicle_id,
+                        'device_id': row.device_id,
                         'device_imei': row.device_imei,
-                        'plate_number': row.plate_number,
+                        'device_name': row.device_name,
                         'start_time': row.start_time,
                         'end_time': row.end_time
                     })
@@ -263,9 +262,9 @@ class GPSProcessor:
         """Collect GPS data cho một session"""
         device_imei = session['device_imei']
         session_id = session['id']
-        plate_number = session['plate_number']
+        device_name = session.get('device_name', 'N/A') # Use .get for safety
 
-        logger.info(f"📍 Collecting GPS for session {session_id} - Device {device_imei} ({plate_number})")
+        logger.info(f"📍 Collecting GPS for session {session_id} - Device {device_imei} ({device_name})")
 
         try:
             # 1. Request GPS data via MQTT

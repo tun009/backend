@@ -8,8 +8,8 @@ from decimal import Decimal
 
 class JourneySessionCreate(BaseModel):
     """Schema for creating new JourneySession."""
-    vehicle_id: uuid.UUID = Field(..., description="ID của xe")
-    driver_id: uuid.UUID = Field(..., description="ID của tài xế")
+    device_id: uuid.UUID = Field(..., description="ID của thiết bị")
+    driver_id: uuid.UUID = Field(..., description="ID của người dùng")
     start_time: datetime = Field(..., description="Thời gian bắt đầu ca dự kiến")
     end_time: datetime = Field(..., description="Thời gian kết thúc ca dự kiến")
     notes: Optional[str] = Field(None, description="Ghi chú cho ca làm việc")
@@ -42,7 +42,7 @@ class JourneySessionStatusUpdate(BaseModel):
 class JourneySessionRead(BaseModel):
     """Schema for reading JourneySession data."""
     id: int
-    vehicle_id: uuid.UUID
+    device_id: uuid.UUID
     driver_id: uuid.UUID
     start_time: datetime
     end_time: Optional[datetime]
@@ -57,7 +57,7 @@ class JourneySessionRead(BaseModel):
 class JourneySessionWithDetails(BaseModel):
     """Schema for JourneySession with related data."""
     id: int
-    vehicle_id: uuid.UUID
+    device_id: uuid.UUID
     driver_id: uuid.UUID
     start_time: datetime
     end_time: Optional[datetime]
@@ -67,8 +67,9 @@ class JourneySessionWithDetails(BaseModel):
     activated_at: Optional[datetime]
 
     # Related data (will be populated by API)
-    vehicle_plate_number: Optional[str] = Field(None, description="Biển số xe")
-    driver_name: Optional[str] = Field(None, description="Tên tài xế")
+    
+    driver_name: Optional[str] = Field(None, description="Tên người sử dụng")
+    driver_phone_number: Optional[str] = Field(None, description="Số điện thoại người dùng")
     device_imei: Optional[str] = Field(None, description="IMEI thiết bị")
 
     class Config:
@@ -77,7 +78,7 @@ class JourneySessionWithDetails(BaseModel):
 class JourneySessionRealtime(BaseModel):
     """Schema for active JourneySession with realtime data from device_logs."""
     id: int
-    vehicle_id: uuid.UUID
+    device_id: uuid.UUID
     driver_id: uuid.UUID
     start_time: datetime
     end_time: Optional[datetime]
@@ -85,7 +86,7 @@ class JourneySessionRealtime(BaseModel):
     activated_at: Optional[datetime]
     last_update:  Optional[datetime]
     # Related data
-    plate_number: Optional[str] = Field(None, description="Biển số xe")
+    driver_phone_number: Optional[str] = Field(None, description="Số điện thoại người dùng")
     driver_name: Optional[str] = Field(None, description="Tên tài xế")
     imei: Optional[str] = Field(None, description="IMEI thiết bị")
 
@@ -118,7 +119,7 @@ class JourneyHistoryPoint(BaseModel):
 
 class JourneySessionHistoryResponse(BaseModel):
     """Schema for journey session history response."""
-    plate_number: Optional[str] = None
+    
     driver_name: Optional[str] = None
     imei: Optional[str] = None
     id: int

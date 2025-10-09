@@ -4,11 +4,13 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastcrud.paginated import PaginatedListResponse, compute_offset, paginated_response
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, or_
 
 from app import schemas
 from app.api import dependencies
 from app.db.session import get_async_db
 from app.data_access import crud_drivers
+from app.models import Driver
 
 router = APIRouter()
 
@@ -24,20 +26,7 @@ async def create_driver(
     current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
 ):
     """Create a new driver."""
-    # Check duplicates using FastCRUD's exists method
-    if await crud_drivers.exists(db=db, license_number=driver_in.license_number):
-        raise HTTPException(status_code=400, detail="License number already exists")
-
-    if driver_in.phone_number and await crud_drivers.exists(
-        db=db, phone_number=driver_in.phone_number
-    ):
-        raise HTTPException(status_code=400, detail="Phone number already exists")
-
-    if driver_in.card_id and await crud_drivers.exists(
-        db=db, card_id=driver_in.card_id
-    ):
-        raise HTTPException(status_code=400, detail="Card ID already exists")
-
+    # Uniqueness checks are removed as per new requirements.
     return await crud_drivers.create(db=db, object=driver_in)
 
 
@@ -67,21 +56,60 @@ async def get_drivers(
     search: Optional[str] = None,
 ):
     """Get drivers with pagination and search."""
-    filters = {}
-    if search:
-        # FastCRUD supports icontains filtering
-        filters["full_name__icontains"] = search
 
-    drivers_data = await crud_drivers.get_multi(
-        db=db,
-        offset=compute_offset(page, items_per_page),
-        limit=items_per_page,
-        schema_to_select=schemas.driver_schemas.DriverRead,
-        **filters
-    )
+    # Build query for drivers
+    stmt = select(Driver).order_by(Driver.created_at.desc())
+
+    # Apply search filter if provided (search in both full_name and phone_number)
+    if search:
+        stmt = stmt.where(
+            or_(
+                Driver.full_name.icontains(search),
+                Driver.phone_number.icontains(search)
+            )
+        )
+
+    # Apply pagination
+    offset = compute_offset(page, items_per_page)
+    stmt = stmt.offset(offset).limit(items_per_page)
+
+    # Execute query
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+
+    # Convert to response schema
+    drivers_list = []
+    for driver in rows:
+        driver_dict = {
+            "id": driver.id,
+            "full_name": driver.full_name,
+            "phone_number": driver.phone_number,
+            "created_at": driver.created_at
+        }
+        driver_data = schemas.driver_schemas.DriverRead.model_validate(driver_dict)
+        drivers_list.append(driver_data)
+
+    # Get total count for pagination
+    count_stmt = select(func.count(Driver.id))
+    if search:
+        count_stmt = count_stmt.where(
+            or_(
+                Driver.full_name.icontains(search),
+                Driver.phone_number.icontains(search)
+            )
+        )
+
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar()
+
+    # Return paginated response
+    fake_crud_data = {
+        "data": drivers_list,
+        "total_count": total or 0
+    }
 
     return paginated_response(
-        crud_data=drivers_data, page=page, items_per_page=items_per_page
+        crud_data=fake_crud_data, page=page, items_per_page=items_per_page
     )
 
 
@@ -121,20 +149,4 @@ async def delete_driver(
     await crud_drivers.delete(db=db, id=driver_id)
 
 
-@router.get(
-    "/license/{license_number}", response_model=schemas.driver_schemas.DriverRead
-)
-async def get_driver_by_license(
-    license_number: str,
-    db: Annotated[AsyncSession, Depends(get_async_db)],
-    current_user: Annotated[dict, Depends(dependencies.get_current_active_user)],
-):
-    """Get driver by license number."""
-    driver = await crud_drivers.get(
-        db=db,
-        license_number=license_number,
-        schema_to_select=schemas.driver_schemas.DriverRead,
-    )
-    if not driver:
-        raise HTTPException(status_code=404, detail="Driver not found")
-    return driver
+
