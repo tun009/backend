@@ -202,7 +202,7 @@ class GPSProcessor:
         async with AsyncSessionLocal() as session:
             try:
                 now = datetime.now(vietnam_tz)
-                logger.info(f"📍 Collecting GPS for session {now}")
+                logger.info(f"📍 Current time: {now}")
                 # Query active sessions với device và vehicle info
 
                 stmt = (
@@ -261,9 +261,7 @@ class GPSProcessor:
         """Collect GPS data cho một session"""
         device_imei = session['device_imei']
         session_id = session['id']
-        device_name = session.get('device_name', 'N/A') # Use .get for safety
-
-        logger.info(f"📍 Collecting GPS for session {session_id} - Device {device_imei} ({device_name})")
+        logger.info(f"📍 Collecting GPS for session {session_id} - Device {device_imei}")
 
         try:
             # 1. Request GPS data via MQTT
