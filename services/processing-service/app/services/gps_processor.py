@@ -15,7 +15,7 @@ from app.models import JourneySession, DeviceLog, Device
 logger = logging.getLogger(__name__)
 
 # Múi giờ Việt Nam (UTC+7)
-vietnam_tz = timezone(timedelta(hours=7))
+vietnam_tz = timezone(timedelta(hours=0))
 
 class GPSProcessor:
     """
@@ -202,16 +202,16 @@ class GPSProcessor:
         async with AsyncSessionLocal() as session:
             try:
                 now = datetime.now(vietnam_tz)
-                
+                logger.info(f"📍 Collecting GPS for session {now}")
                 # Query active sessions với device và vehicle info
+
                 stmt = (
                     select(
                         JourneySession.id,
                         JourneySession.device_id,
                         JourneySession.start_time,
                         JourneySession.end_time,
-                        Device.imei.label('device_imei'),
-                        Device.device_name
+                        Device.imei.label('device_imei')
                     )
                     .join(Device, JourneySession.device_id == Device.id)
                     .where(
@@ -230,7 +230,6 @@ class GPSProcessor:
                         'id': row.id,
                         'device_id': row.device_id,
                         'device_imei': row.device_imei,
-                        'device_name': row.device_name,
                         'start_time': row.start_time,
                         'end_time': row.end_time
                     })

@@ -49,11 +49,6 @@ class Device(Base):
     firmware_version = Column(String(20))
     installed_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Thêm thông tin mô tả thiết bị
-    device_name = Column(String(100))
-    device_type = Column(String(50))
-    description = Column(Text)
-
 __all__ = [
     "Base",
     "JourneySession",
