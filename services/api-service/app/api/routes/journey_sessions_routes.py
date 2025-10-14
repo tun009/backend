@@ -408,6 +408,8 @@ async def get_journey_session_history(
     journey_stmt = (
         select(
             JourneySession.id,
+            JourneySession.start_time.label("journey_start_time"),
+            JourneySession.end_time.label("journey_end_time"),
             Driver.full_name,
             Device.imei,
             Vehicle.plate_number
@@ -424,7 +426,11 @@ async def get_journey_session_history(
     if not journey_row:
         raise HTTPException(status_code=404, detail="Ca làm việc không tồn tại")
 
-    journey_id, driver_name, device_imei, plate_number = journey_row
+    journey_id, journey_start_time, journey_end_time, driver_name, device_imei, plate_number = journey_row
+
+    # Use journey's time as default if filter time is not provided
+    filter_start_time = start_time if start_time else journey_start_time
+    filter_end_time = end_time if end_time else journey_end_time
 
     # Build logs query with optional time filters
     logs_stmt = (
@@ -436,10 +442,10 @@ async def get_journey_session_history(
         .where(DeviceLog.journey_session_id == session_id)
     )
 
-    if start_time:
-        logs_stmt = logs_stmt.where(DeviceLog.collected_at >= start_time)
-    if end_time:
-        logs_stmt = logs_stmt.where(DeviceLog.collected_at <= end_time)
+    if filter_start_time:
+        logs_stmt = logs_stmt.where(DeviceLog.collected_at >= filter_start_time)
+    if filter_end_time:
+        logs_stmt = logs_stmt.where(DeviceLog.collected_at <= filter_end_time)
 
     logs_stmt = logs_stmt.order_by(DeviceLog.collected_at.asc())  # Sắp xếp theo thời gian tăng dần
 
